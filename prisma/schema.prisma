@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  BORROWER
+  CUSTODIAN
+}
+
+enum Serviceability {
+  SERVICEABLE
+  MAINTENANCE
+  RETIRED
+}
+
+enum BorrowRequestStatus {
+  PENDING
+  FULFILLED
+}
+
+model User {
+  id              String          @id @default(uuid())
+  normalizedEmail String          @unique
+  displayName     String
+  passwordHash    String
+  role            Role
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  sessions        Session[]
+  borrowRequests  BorrowRequest[] @relation("BorrowerRequests")
+  borrowedLoans   Loan[]          @relation("BorrowerLoans")
+  checkoutLoans   Loan[]          @relation("CheckoutCustodianLoans")
+  returnedLoans   Loan[]          @relation("ReturnCustodianLoans")
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model EquipmentModel {
+  id          String   @id @default(uuid())
+  name        String
+  category    String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  assets      Asset[]
+
+  @@unique([name, category])
+}
+
+model Asset {
+  id               String          @id @default(uuid())
+  equipmentModelId String
+  assetCode        String          @unique
+  serviceability   Serviceability  @default(SERVICEABLE)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  equipmentModel   EquipmentModel  @relation(fields: [equipmentModelId], references: [id], onDelete: Restrict)
+  borrowRequests   BorrowRequest[]
+  loans            Loan[]
+
+  @@index([equipmentModelId])
+  @@index([serviceability])
+}
+
+model BorrowRequest {
+  id          String              @id @default(uuid())
+  borrowerId  String
+  assetId     String
+  status      BorrowRequestStatus @default(PENDING)
+  createdAt   DateTime            @default(now())
+  fulfilledAt DateTime?
+  borrower    User                @relation("BorrowerRequests", fields: [borrowerId], references: [id], onDelete: Restrict)
+  asset       Asset               @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  loan        Loan?
+
+  @@unique([id, borrowerId, assetId])
+  @@index([borrowerId, status])
+  @@index([assetId, status])
+}
+
+model Loan {
+  id              String        @id @default(uuid())
+  borrowRequestId String        @unique
+  assetId         String
+  borrowerId      String
+  checkedOutById  String
+  checkedOutAt    DateTime      @default(now())
+  returnedAt      DateTime?
+  returnedById    String?
+  borrowRequest   BorrowRequest @relation(fields: [borrowRequestId, borrowerId, assetId], references: [id, borrowerId, assetId], onDelete: Restrict)
+  asset           Asset         @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  borrower        User          @relation("BorrowerLoans", fields: [borrowerId], references: [id], onDelete: Restrict)
+  checkedOutBy    User          @relation("CheckoutCustodianLoans", fields: [checkedOutById], references: [id], onDelete: Restrict)
+  returnedBy      User?         @relation("ReturnCustodianLoans", fields: [returnedById], references: [id], onDelete: Restrict)
+
+  @@index([assetId])
+  @@index([borrowerId])
+  @@index([returnedAt])
+  @@unique([borrowRequestId, borrowerId, assetId])
+}
