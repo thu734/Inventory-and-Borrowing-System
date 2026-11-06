@@ -8,12 +8,6 @@ Scenario assumption: disconnected lending records make it difficult to identify 
 
 The system boundary is browser UI → backend/application layer → persistent database. The backend controls identity, permissions and domain transitions. Product goals are reliable equipment discovery, exclusive checkout, traceable returns/history and accurate inventory summaries. Success is demonstrated by retrieving saved outcomes and rejecting invalid, conflicting or unauthorized operations without partial updates or private-data disclosure.
 
-### References
-
-- CPE 334 Group Work Specification, supplied `group_work_specs_v1.pdf`, §§5–8 and Theme 2, page 5.
-- CPE 334 Project Deliverable 1, supplied `project_deliverable_1_v1.pdf`, §§3.1–3.2.
-- BorrowBase project and implementation plan: scope, stack and responsibilities.
-
 ## 2. Stakeholders and Actors
 
 The application has two actors: Borrower and Custodian.
