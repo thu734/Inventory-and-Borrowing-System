@@ -1,6 +1,9 @@
 import { createApp, finishApp } from './app.ts';
 import { readEnv } from './config/env.ts';
 import { PrismaAuthStore, type PrismaAuthDatabase } from './modules/auth/auth.store.ts';
+import type { PrismaClient as GeneratedPrismaClient } from '@prisma/client';
+import { PrismaBorrowingStore } from './modules/borrowing/borrowing.store.ts';
+import { mountBorrowingRoutes } from './modules/borrowing/borrowing.routes.ts';
 
 async function main() {
   const env = readEnv();
@@ -8,11 +11,13 @@ async function main() {
   // the independent auth build possible before that generated client exists.
   const prismaPackage = '@prisma/client';
   const { PrismaClient } = await import(prismaPackage);
-  const db = new PrismaClient() as PrismaAuthDatabase & { $connect(): Promise<void>; $disconnect(): Promise<void> };
+  const prisma = new PrismaClient();
+  const db = prisma as PrismaAuthDatabase & { $connect(): Promise<void>; $disconnect(): Promise<void> };
   await db.$connect();
-  const { app } = createApp({ store: new PrismaAuthStore(db), origin: env.APP_ORIGIN,
+  const auth = createApp({ store: new PrismaAuthStore(db), origin: env.APP_ORIGIN,
     csrfSecret: env.CSRF_SECRET, secureCookies: env.NODE_ENV === 'production' });
-  const server = finishApp(app).listen(env.PORT, () => console.info(`API listening on port ${env.PORT}`));
+  mountBorrowingRoutes(auth, new PrismaBorrowingStore(prisma as GeneratedPrismaClient));
+  const server = finishApp(auth.app).listen(env.PORT, () => console.info(`API listening on port ${env.PORT}`));
   const stop = () => server.close(() => { void db.$disconnect().finally(() => process.exit(0)); });
   process.once('SIGTERM', stop); process.once('SIGINT', stop);
 }

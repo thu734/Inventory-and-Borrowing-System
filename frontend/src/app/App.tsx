@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../features/auth/AuthProvider';
 import { LoginPage } from '../features/auth/LoginPage';
+import { BorrowerWorkspace } from '../features/borrowing/BorrowerWorkspace';
 export function App() {
   const { session, loading, error, retry, logout } = useAuth();
   const [busy, setBusy] = useState(false); const [logoutError, setLogoutError] = useState('');
@@ -21,6 +22,7 @@ export function App() {
           <div className="identity-panel"><span className="identity-label">Signed in as</span><strong>{session.user.role === 'BORROWER' ? 'Borrower' : 'Custodian'}</strong></div>
           <button className="secondary-button" onClick={signOut} disabled={busy}>{busy ? 'Signing out…' : 'Sign out'}</button>
           {logoutError && <p role="alert" className="error">{logoutError}</p>}
+          {session.user.role === 'BORROWER' && <BorrowerWorkspace/>}
         </section>}
     </main></>;
 }
