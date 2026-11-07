@@ -1,6 +1,6 @@
 # F-01 — Authentication and server-side access
 
-Status: **implemented and locally verified on feature/f01-authentication-integrated, implementation/evidence commit 939362f**. Shared SYS-01 integration is complete; teammate review remains pending. This does not establish completion of the full Sprint 1 borrowing workflow.
+Status: **recovered and locally verified on recovery/f01-staging**, based on sprint1-staging after reviewed SYS-01 PR #8. Original feature/f01-authentication-integrated commits and merged PR #7 remain historical evidence; the recovered F-01 PR requires separate teammate review. This does not establish completion of the full Sprint 1 borrowing workflow.
 
 ## Traceability and boundary
 
@@ -65,6 +65,8 @@ Real PostgreSQL verification in `backend/tests/auth.postgres.test.ts` covers see
 
 ### Executed verification and limitations
 
+Recovery verification on 7 November 2026 at implementation commit `3cfc16c` (tree-identical to original `9564bd9`): `npm ci`, Prisma validation/client generation, 35 backend tests (including five real PostgreSQL authentication tests), six mocked-API UI tests, both typechecks/builds and stacked-diff whitespace checks passed. PostgreSQL used isolated disposable `borrowbase_sys01_f01` with `SYS01_TEST_DATABASE=true`; no reset or shared schema changes. The original commits were transferred with `-x`: `d7a3ace` → `2641e73`, `939362f` → `9eb3cb8`, `9564bd9` → `3cfc16c`. Prior browser evidence below remains applicable because application code and screenshots are unchanged; it was not rerun during recovery. Historical commit references below describe the original runs, not the recovered branch's commit identities.
+
 On 7 November 2026 at 12:27 Asia/Bangkok, the existing F-01 PostgreSQL suite was rerun against the isolated disposable `borrowbase_sys01_f01` database with `SYS01_TEST_DATABASE=true`: `npm run test -w backend -- tests/auth.postgres.test.ts` — **1 file, 5 tests passed, 0 failed** at implementation/evidence commit `939362f`, with documentation-only working-tree edits. The existing generated client worked; no schema, migration, seed or SYS-01 regression change was needed. A separate temporary-fixture PostgreSQL check confirmed that a Custodian can pass the role guard and that the same valid session returns 401 after its User becomes inactive; its temporary User/Session records were removed. This supplemental check is not an additional repository test.
 
 The latest non-database rerun passed 10 backend unit tests, 20 memory-backed API tests and 6 mocked-API frontend tests, plus both typechecks and builds. Together with the five PostgreSQL authentication tests, these provide 35 backend and 6 frontend passing tests across the recorded runs. Earlier verification also passed Prisma validation/client generation. SYS-01's separate five-test regression previously passed and was not repeated for these documentation-only corrections.
@@ -82,4 +84,4 @@ The three known high-severity Prisma dependency findings remain unresolved, as d
 - Existing unit, memory-backed API, UI, typecheck, and build suites remain green.
 - BorrowBase branding, responsive behavior, keyboard access, visible focus, labels, and error/loading states remain covered by the UI contract and tests.
 - No F-02, F-03, or F-04 application behavior is introduced.
-- F-01 implementation/evidence commits are separate from SYS-01 on feature/f01-authentication-integrated. Further commits, pushes and PR actions require explicit approval; no teammate review or merge is implied by local verification.
+- Recovered F-01 implementation/evidence commits are separate from SYS-01 on recovery/f01-staging, targeting sprint1-staging. No teammate review or merge is implied by local verification; original branches and PR #7 history remain preserved.
