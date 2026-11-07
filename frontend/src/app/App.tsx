@@ -11,7 +11,7 @@ export function App() {
     finally { setBusy(false); }
   }
   return <><a className="skip" href="#main">Skip to content</a>
-    <header className="site-header"><div className="brand"><span className="brand-mark" aria-hidden="true">B</span><div><strong>BorrowBase</strong><span>Equipment lending, simplified</span></div></div><span className="department">KMUTT Computer Engineering · Demo</span></header>
+    <header className="site-header"><div className="brand"><span className="brand-mark" aria-hidden="true">B</span><div><strong>BorrowBase</strong></div></div><span className="department">CPE Equipment Borrowing System · Demo</span></header>
     <main id="main">
       {loading ? <p role="status">Checking your session…</p> : error ?
         <section className="card status-card"><p className="eyebrow">Connection issue</p><h1>Service unavailable</h1><p role="alert">{error}</p><button onClick={retry}>Try again</button></section> : !session ? <LoginPage/> :

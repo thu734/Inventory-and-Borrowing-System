@@ -12,8 +12,7 @@ export function LoginPage() {
     finally { setBusy(false); }
   }
   return <section className="card login-card" aria-labelledby="login-heading">
-    <div className="login-intro"><span className="login-icon" aria-hidden="true">↗</span><div><p className="eyebrow">Welcome back</p><h1 id="login-heading">Sign in to BorrowBase</h1></div></div>
-    <p className="muted">Use your assigned department account to manage equipment lending.</p>
+    <h1 id="login-heading">Sign in</h1>
     <form onSubmit={submit} aria-busy={busy}>
       <label htmlFor="email">Email</label>
       <input id="email" name="email" type="email" autoComplete="username" required maxLength={254} value={email} onChange={e => setEmail(e.target.value)} disabled={busy}/>
@@ -23,6 +22,5 @@ export function LoginPage() {
       <button className="primary-button" disabled={busy} type="submit">{busy ? 'Signing in…' : 'Sign in'}</button>
       <span role="status" className="status">{busy ? 'Checking your account…' : ''}</span>
     </form>
-    <p className="note">Synthetic department data · Secure role-based access</p>
   </section>;
 }
