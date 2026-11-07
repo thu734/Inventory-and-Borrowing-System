@@ -20,7 +20,7 @@ describe('TEST-F01-09: auth UI states', () => {
     let resolve!: (response: Response) => void;
     const fetcher = vi.fn().mockResolvedValueOnce(reply({}, 401)).mockImplementationOnce(() => new Promise<Response>(done => { resolve = done; }));
     vi.stubGlobal('fetch', fetcher); start();
-    await screen.findByRole('heading', { name: 'Sign in to BorrowBase' });
+    await screen.findByRole('heading', { name: 'Sign in' });
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'borrower@example.test' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'test-password' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Sign in' }).closest('form')!);
@@ -31,7 +31,7 @@ describe('TEST-F01-09: auth UI states', () => {
   });
   it('shows invalid credential feedback without claiming success', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(reply({}, 401)).mockResolvedValueOnce(reply({ error: { message: 'Email or password is incorrect.' } }, 401)));
-    start(); await screen.findByRole('heading', { name: 'Sign in to BorrowBase' });
+    start(); await screen.findByRole('heading', { name: 'Sign in' });
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'borrower@example.test' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'wrong' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Sign in' }).closest('form')!);
@@ -49,13 +49,13 @@ describe('TEST-F01-09: auth UI states', () => {
   it('successful logout clears authenticated content', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(reply(session)).mockResolvedValueOnce(reply(null, 204)));
     start(); fireEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
-    expect(await screen.findByRole('heading', { name: 'Sign in to BorrowBase' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
   });
   it('can retry a failed identity bootstrap without showing a login as a success', async () => {
     const fetcher = vi.fn().mockRejectedValueOnce(new TypeError('network')).mockResolvedValueOnce(reply({}, 401));
     vi.stubGlobal('fetch', fetcher); start();
     expect(await screen.findByRole('heading', { name: 'Service unavailable' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Sign in to BorrowBase' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument());
   });
 });
