@@ -17,7 +17,7 @@ F-02 provides authenticated Borrower and Custodian list/detail views for physica
 - A `PENDING` `BorrowRequest` does not reserve an Asset.
 - F-02 passes the selected physical `assetId` to F-03. Display metadata is informational; the server revalidates availability when a request is submitted.
 - Q-01 rejects duplicate `PENDING` requests for the same Borrower/Asset pair, including concurrent submissions. F-03 owns enforcement of that request rule.
-- Q-02 keeps competing requests `PENDING` after one request is fulfilled. F-04 owns checkout and request-state transitions.
+- Proposed Q-02 (pending team agreement): competing requests remain `PENDING` after one request is fulfilled. F-04 owns checkout and request-state transitions. The decision must be confirmed in the SRS before Sprint 1 release.
 - Authentication, role and ownership decisions are enforced server-side.
 
 ## UI specification
@@ -92,6 +92,25 @@ The catalog response is a read projection. F-03 repeats the availability check i
 
 Tests use isolated disposable PostgreSQL databases for persistence fixtures. No test writes to shared or production data.
 
+### Detailed Software Test Specification (STS)
+
+The following tests are planned for F-02.
+Tests involving persistence must use an isolated PostgreSQL
+database with synthetic test data.
+
+| Test ID / AC | Test Level | Preconditions | Action | Expected Result |
+|---|---|---|---|---|
+| TEST-F02-01 / AC-F02-01 | API and PostgreSQL integration | Active Borrower and Custodian accounts; seeded Assets and EquipmentModels | Request GET /api/v1/assets and GET /api/v1/assets/:id | Both roles receive correct AssetDTO fields; the list is ordered by assetCode ascending. |
+| TEST-F02-02 / AC-F02-02 | Unit and PostgreSQL integration | Assets in SERVICEABLE, MAINTENANCE and RETIRED states; an Asset with an active Loan and one with a returned Loan | Retrieve each Asset's availability | Only SERVICEABLE Assets with no active Loan return available=true. |
+| TEST-F02-03 / AC-F02-03 | API security integration | Valid session, missing session and expired session | Call protected Asset endpoints | Valid session succeeds; invalid sessions are rejected; no password hashes or session secrets appear in responses. |
+| TEST-F02-04 / AC-F02-04 | UI integration | Borrower is logged in; an available Asset exists | Select an Asset and open the borrowing request flow | The selected physical UUID is passed as assetId; model ID and assetCode cannot replace assetId. |
+| TEST-F02-05 / AC-F02-05 | API validation and integration | Empty catalog, unknown Asset ID, malformed UUID and simulated database failure | Request list/detail endpoints with these conditions | Empty list returns items=[]; invalid requests return safe 4xx errors; database failures return sanitized 5xx errors. |
+| TEST-F02-06 / AC-F02-06 | UI component and accessibility | Loading, empty, failed-response and narrow-screen scenarios | Navigate the catalog with mouse and keyboard | Loading, empty and error states are visible; controls have labels and keyboard focus; no horizontal overflow occurs. |
+
+These test cases describe planned verification.
+Execution results, test file names, pass/fail counts and tested
+commit IDs will be recorded after implementation.
+
 ## Product Definition of Done
 
 - Requirements and project design decisions are reflected in implementation and tests.
@@ -100,9 +119,12 @@ Tests use isolated disposable PostgreSQL databases for persistence fixtures. No 
 - Role guards, validation, safe errors and response projections are verified.
 - Unit/API/UI and real-PostgreSQL tests, typecheck, build and whitespace checks pass.
 - Only executed evidence is marked complete in the contract and traceability records.
+- Teammate review, integration into `sprint1-staging`, reviewed promotion to `main`, and reproducible README/setup instructions are required before completion.
+- Record executed test commands, test files, pass/fail/skip counts, tested commit IDs and acceptance evidence. Disclose incomplete work and known limitations.
 
 ## Revision history
 
 | Revision | Change |
 |---|---|
-| 1.0 | Initial Sprint 1 engineering contract; records project-approved Q-01/Q-02 decisions. |
+| 1.0 | Initial Sprint 1 engineering contract. |
+| 1.1 | Clarified proposed Q-02 policy, expanded STS and strengthened Definition of Done. |

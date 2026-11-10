@@ -18,7 +18,7 @@ F-04 lets a Custodian inspect department requests and active Loans and check out
 - Checkout uses one database transaction and locks the Asset first with `FOR UPDATE`, then revalidates the request and Asset state.
 - The transaction atomically changes the selected request from `PENDING` to `FULFILLED`, records `fulfilledAt` and creates exactly one active `Loan`.
 - PostgreSQL `Loan_one_active_per_asset` enforces at most one active Loan per Asset. A conflict commits no partial checkout state.
-- Q-02 is project-approved: competing requests remain `PENDING` after one request is fulfilled. They are not automatically fulfilled, cancelled or expired. After return, eligibility is rechecked; no automatic checkout occurs.
+- Proposed Q-02 (pending team agreement): competing requests remain `PENDING` after one request is fulfilled. They are not automatically fulfilled, cancelled or expired. After return, eligibility is rechecked; no automatic checkout occurs. Confirm this decision in the SRS before Sprint 1 release.
 - Q-01 is enforced by F-03 when requests are created: duplicate `PENDING` requests for the same Borrower/Asset pair, including concurrent duplicates, are rejected. F-04 does not add a different duplicate policy.
 
 ## UI specification
@@ -81,14 +81,14 @@ The request list rejects unknown query parameters and invalid `status` values wi
 
 Within one PostgreSQL transaction, checkout must:
 
-1. Authenticate the Custodian before entering the service.
-2. Lock the selected Asset row first with `SELECT ... FOR UPDATE`.
-3. Re-read the request and verify it is `PENDING`.
-4. Verify the request's Asset is the locked Asset and its Borrower/Asset relationship is intact.
-5. Recheck `serviceability = SERVICEABLE` and absence of an active Loan.
-6. Update the request to `FULFILLED` with `fulfilledAt`.
-7. Insert one `Loan` with `borrowRequestId`, `assetId`, `borrowerId`, `checkedOutById` and `checkedOutAt`.
-8. Commit only if every step succeeds.
+1. Authenticate and authorize the active Custodian before entering the checkout service.
+2. Read the selected BorrowRequest to identify its assetId without modifying its state.
+3. Lock the associated Asset row using SELECT ... FOR UPDATE.
+4. Re-read and lock the BorrowRequest row. Verify that its status is PENDING and its assetId matches the locked Asset.
+5. Verify that the Asset is SERVICEABLE and no active Loan exists.
+6. Update the BorrowRequest to FULFILLED and record fulfilledAt.
+7. Insert exactly one active Loan with borrowRequestId, assetId, borrowerId, checkedOutById and checkedOutAt.
+8. Commit if all operations succeed. Otherwise, roll back the entire transaction.
 
 The schema and migrations provide:
 
@@ -98,7 +98,18 @@ The schema and migrations provide:
 - request status/`fulfilledAt` consistency;
 - restrictive historical foreign keys.
 
-The Asset-first lock ordering is the shared convention for F-03 request creation and future checkout mutations. Different Borrowers may have `PENDING` requests for the same Asset, but only one checkout can succeed while the Asset is active-loaned. Competing requests remain `PENDING` under Q-02.
+The Asset-first lock ordering is the shared convention for F-03 request creation and future checkout mutations. Different Borrowers may have `PENDING` requests for the same Asset, but only one checkout can succeed while the Asset is active-loaned. Competing requests remain `PENDING` under the proposed Q-02 policy, subject to team confirmation.
+
+Within one PostgreSQL transaction, checkout must:
+
+1. Authenticate the active Custodian and enforce server-side authorization before entering the checkout service.
+2. Read the selected BorrowRequest to identify its associated physical assetId.
+3. Lock the associated Asset row with SELECT ... FOR UPDATE. Asset locking must happen before request-state mutation.
+4. Re-read and lock the BorrowRequest row, verifying that it still belongs to the selected Asset and has status PENDING.
+5. Verify that the Asset is SERVICEABLE and that no active Loan exists with returnedAt IS NULL.
+6. Update the selected BorrowRequest to FULFILLED and record fulfilledAt.
+7. Insert exactly one active Loan with borrowRequestId, assetId, borrowerId, checkedOutById and checkedOutAt.
+8. Commit only if every validation and database operation succeeds. Otherwise, roll back the entire transaction.
 
 ## Acceptance criteria and Software Test Specification
 
@@ -116,6 +127,39 @@ The Asset-first lock ordering is the shared convention for F-03 request creation
 
 Tests use isolated disposable PostgreSQL databases and assert persisted request, Loan and Asset state after success and failure. No shared or production database may be used.
 
+### Detailed Software Test Specification (STS)
+
+The following tests are planned for F-04. Integration tests use an isolated PostgreSQL database with synthetic Borrowers, Custodians, Assets, BorrowRequests and Loans.
+
+| Test ID / AC | Test Level | Preconditions | Action | Expected Result |
+|---|---|---|---|---|
+| TEST-F04-01 / AC-F04-01 | API and PostgreSQL integration | Active Custodian session; multiple department requests in PENDING and FULFILLED states | Call GET /api/v1/custodian/borrow-requests with and without status=PENDING, then retrieve one request by ID | Return correct DTOs, deterministic ordering and only matching records when filtered. An empty result returns items=[]. |
+| TEST-F04-02 / AC-F04-02 | API security integration | Active Borrower, valid Custodian, missing session and inactive/revoked session | Attempt Custodian GET and POST operations using each session | Only active Custodian is authorized. Unauthenticated requests return 401; Borrower requests return 403. No private checkout data is exposed. |
+| TEST-F04-03 / AC-F04-03 | API and PostgreSQL integration | Serviceable Asset with no active Loan; valid PENDING request; active Custodian | POST /api/v1/custodian/borrow-requests/:id/checkout | Return 201 with fulfilled request and active Loan. Persist status=FULFILLED, fulfilledAt and matching borrowerId, assetId, borrowRequestId and checkedOutById. |
+| TEST-F04-04 / AC-F04-04 | Unit and PostgreSQL integration | PENDING requests for MAINTENANCE, RETIRED and already-loaned Assets | Attempt checkout for each unavailable Asset | Reject checkout with 409 ASSET_UNAVAILABLE. Request remains PENDING, and no new Loan or partial changes are committed. |
+| TEST-F04-05 / AC-F04-05 | API and PostgreSQL integration | Request already FULFILLED with an existing Loan | Attempt checkout of the same request again | Return 409 REQUEST_NOT_PENDING. No duplicate Loan is inserted and existing records remain unchanged. |
+| TEST-F04-06 / AC-F04-06 | PostgreSQL concurrency integration | One SERVICEABLE Asset with no active Loan; two different Borrowers have PENDING requests for that Asset | Execute two concurrent Custodian checkout transactions for the same Asset | Exactly one checkout succeeds. The other returns a conflict. Exactly one active Loan exists, and the losing request remains PENDING without partial changes. |
+| TEST-F04-07 / AC-F04-07 | PostgreSQL integration | Two different Borrowers have PENDING requests for the same available Asset | Fulfill one request, then retrieve both requests | The fulfilled request becomes FULFILLED and produces one active Loan. The competing request remains PENDING and is not automatically fulfilled or cancelled. This verifies the proposed Q-02 policy after team approval. |
+| TEST-F04-08 / AC-F04-08 | API validation and security integration | Malformed request ID, unknown request ID, invalid query parameters, invalid Origin/CSRF and simulated database failure | Submit invalid API requests and checkout operations | Return safe 400, 403, 404 or 500 responses as appropriate. No SQL, stack traces, session values or sensitive data are disclosed. No failed checkout leaves partial changes. |
+| TEST-F04-09 / AC-F04-09 | UI component and end-to-end | Custodian is logged in; seeded PENDING requests; loading, empty and conflict conditions available | Open the Custodian workspace, inspect the queue, perform checkout and test keyboard and narrow-screen navigation | Correct loading, empty, success, conflict and failure states appear. Successful checkout updates the displayed request and Loan. Controls are keyboard-accessible and responsive. |
+
+### Test execution and evidence
+
+All planned tests must be executed against the implemented feature.
+
+The final verification evidence must record:
+
+- Actual test file names and test IDs.
+- Commands used to run the tests.
+- The tested Git commit ID.
+- Passed, failed and skipped test counts.
+- PostgreSQL assertions for successful and rejected checkouts.
+- Backend authorization evidence for restricted operations.
+- Selected UI screenshots and acceptance-test results.
+- TDD evidence where meaningful rule tests fail before implementation and pass after correction.
+
+No test is considered passed until it has actually been executed. Failed and skipped tests must be disclosed.
+
 ## Product Definition of Done
 
 - F-01 guards and F-02/F-03 interfaces are integrated without client-controlled identity or role bypass.
@@ -124,9 +168,12 @@ Tests use isolated disposable PostgreSQL databases and assert persisted request,
 - Authorization, validation, safe errors, rollback and UI recovery states are verified.
 - Unit/API/UI and real-PostgreSQL tests, typecheck, build and whitespace checks pass.
 - Only executed evidence is marked complete in the contract and traceability records.
+- Teammate review, integration into `sprint1-staging`, reviewed promotion to `main`, and reproducible README/setup instructions are required before completion.
+- Record executed test commands, test files, pass/fail/skip counts, tested commit IDs and acceptance evidence. Disclose incomplete work and known limitations.
 
 ## Revision history
 
 | Revision | Change |
 |---|---|
-| 1.0 | Initial Sprint 1 engineering contract; records project-approved Q-01/Q-02 decisions. |
+| 1.0 | Initial Sprint 1 engineering contract. |
+| 1.1 | Clarified proposed Q-02 policy, expanded STS, refined checkout transaction sequence and strengthened Definition of Done. |
