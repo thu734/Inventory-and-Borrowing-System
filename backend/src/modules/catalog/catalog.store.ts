@@ -10,9 +10,8 @@ export interface AssetDTO {
 
 export interface CatalogStore {
   list(): Promise<AssetDTO[]>;
-  detail(id: string): Promise<AssetDTO | null>;
-  
-}
+  detail(id: string): Promise<AssetDTO | null>
+  ;}
 
 export function calculateAvailability(
   serviceability: AssetDTO['serviceability'],
