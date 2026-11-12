@@ -6,11 +6,46 @@ afterEach(() => { vi.unstubAllGlobals(); window.location.hash = ''; });
 const unit = { id: '31f81203-9156-4be0-8488-e72fdc734301', assetCode: 'F03-UNIT', modelName: 'Lab board', category: 'Embedded' };
 const record = { id: '51f81203-9156-4be0-8488-e72fdc734301', status: 'PENDING', createdAt: '2026-11-07T00:00:00Z', asset: unit };
 const reply = (data: unknown, status = 200) => new Response(JSON.stringify(status === 200 || status === 201 ? {data} : {error:{message:data}}),{status});
-function start(responses: (() => Promise<Response>)[], role='BORROWER') {
-  const fetcher=vi.fn().mockResolvedValueOnce(reply({ user:{id:'a',displayName:'Demo Borrower',role},csrfToken:'csrf' }));
-  responses.forEach(fn=>fetcher.mockImplementationOnce(fn));vi.stubGlobal('fetch',fetcher);
-  render(<AuthProvider><App/></AuthProvider>);return fetcher;
+
+function start(
+  responses: (() => Promise<Response>)[],
+  role = 'BORROWER'
+) {
+  const fetcher = vi.fn().mockResolvedValueOnce(
+    reply({
+      user: {
+        id: 'a',
+        displayName: 'Demo Borrower',
+        role
+      },
+      csrfToken: 'csrf'
+    })
+  );
+
+  responses.forEach(fn => {
+    fetcher.mockImplementationOnce(fn);
+  });
+
+  vi.stubGlobal('fetch', (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ) => {
+    if (String(input) === '/api/v1/assets') {
+      return Promise.resolve(reply({ items: [] }));
+    }
+
+    return fetcher(input, init);
+  });
+
+  render(
+    <AuthProvider>
+      <App />
+    </AuthProvider>
+  );
+
+  return fetcher;
 }
+
 describe('F-03 Borrower UI',()=>{
   it('UI-01 own requests has loading and empty states',async()=>{
     let resolve!:(r:Response)=>void;

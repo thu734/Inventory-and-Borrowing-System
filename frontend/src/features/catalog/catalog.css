@@ -1,0 +1,50 @@
+
+.equipment-catalog {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.5rem;
+}
+
+.equipment-catalog h2 {
+  color: #1e1b4b;
+  margin-bottom: 0.5rem;
+}
+
+.equipment-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: 1rem;
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0;
+}
+
+.equipment-item {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  padding: 1.25rem;
+  min-width: 0;
+}
+
+.equipment-item h3 {
+  color: #1e1b4b;
+  margin: 0 0 0.75rem;
+}
+
+.equipment-item p {
+  margin: 0.4rem 0;
+  overflow-wrap: anywhere;
+}
+
+.equipment-item button {
+  margin-right: 0.4rem;
+}
+
+.equipment-detail {
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: #fff;
+  margin-top: 1rem;
+}

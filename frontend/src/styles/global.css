@@ -6,3 +6,4 @@ form{display:flex;flex-direction:column;gap:.5rem;margin-top:1.25rem}label{font-
 .identity-panel{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:1.5rem 0;padding:1rem;background:#f8fafc;border:1px solid var(--line);border-radius:.7rem}.identity-label{color:var(--muted);font-size:.85rem}.identity-panel strong{color:#1e1b4b}
 @media(max-width:600px){.site-header{align-items:flex-start}.department{width:100%;padding-left:3.1rem}.card{padding:1.35rem}main{align-items:start;padding-top:2rem}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+.signed-in-card {max-width: 70rem;}
