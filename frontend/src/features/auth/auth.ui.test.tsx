@@ -6,7 +6,30 @@ afterEach(() => { vi.unstubAllGlobals(); });
 const user = { id: 'demo', displayName: 'Demo Borrower', role: 'BORROWER' };
 const session = { data: { user, csrfToken: 'csrf-test' } };
 const reply = (body: unknown, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), { status });
-const start = () => render(<AuthProvider><App/></AuthProvider>);
+
+const start = () => {
+  const originalFetch = globalThis.fetch;
+
+  vi.stubGlobal('fetch', (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ) => {
+    if (String(input) === '/api/v1/assets') {
+      return Promise.resolve(
+        reply({ data: { items: [] } })
+      );
+    }
+
+    return originalFetch(input, init);
+  });
+
+  return render(
+    <AuthProvider>
+      <App />
+    </AuthProvider>
+  );
+};
+
 
 describe('TEST-F01-09: auth UI states', () => {
   it('does not show protected content before identity bootstrap', async () => {

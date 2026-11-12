@@ -4,6 +4,8 @@ import { PrismaAuthStore, type PrismaAuthDatabase } from './modules/auth/auth.st
 import type { PrismaClient as GeneratedPrismaClient } from '@prisma/client';
 import { PrismaBorrowingStore } from './modules/borrowing/borrowing.store.ts';
 import { mountBorrowingRoutes } from './modules/borrowing/borrowing.routes.ts';
+import { PrismaCatalogStore } from './modules/catalog/prisma-catalog.store.ts';
+import { mountCatalogRoutes } from './modules/catalog/catalog.routes.ts';
 
 async function main() {
   const env = readEnv();
@@ -17,6 +19,7 @@ async function main() {
   const auth = createApp({ store: new PrismaAuthStore(db), origin: env.APP_ORIGIN,
     csrfSecret: env.CSRF_SECRET, secureCookies: env.NODE_ENV === 'production' });
   mountBorrowingRoutes(auth, new PrismaBorrowingStore(prisma as GeneratedPrismaClient));
+  mountCatalogRoutes(auth, new PrismaCatalogStore(prisma as GeneratedPrismaClient));
   const server = finishApp(auth.app).listen(env.PORT, () => console.info(`API listening on port ${env.PORT}`));
   const stop = () => server.close(() => { void db.$disconnect().finally(() => process.exit(0)); });
   process.once('SIGTERM', stop); process.once('SIGINT', stop);
