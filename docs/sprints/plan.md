@@ -1,5 +1,20 @@
 # BorrowBase Three-Sprint Plan
 
+> **Q-02 Final Decision — 12 November 2026**
+>
+> Confirmed by Member 2, the F-04 feature owner.
+> When a Custodian fulfills one BorrowRequest, competing PENDING
+> requests for the same Asset remain PENDING. They are not
+> automatically cancelled or fulfilled.
+>
+> The Asset is unavailable while an active Loan exists.
+> Any later checkout must revalidate Asset eligibility.
+>
+> This is the adopted Sprint 1 implementation policy.
+> Its behavior is verified by TEST-F04-07 using PostgreSQL.
+> This decision supersedes earlier draft references describing
+> Q-02 as awaiting Member 2 confirmation.
+>
 ## 1. Planning basis and Sprint 1 scope
 
 BorrowBase is developed across three sprints for CPE 334 Project Deliverable 1. This plan follows the SRS, feature inventory, and traceability matrix. Sprint work describes planned outcomes, not completed implementation.

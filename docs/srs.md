@@ -1,5 +1,20 @@
 # BorrowBase — Software Requirements Specification
 
+> **Q-02 Final Decision — 12 November 2026**
+>
+> Confirmed by Member 2, the F-04 feature owner.
+> When a Custodian fulfills one BorrowRequest, competing PENDING
+> requests for the same Asset remain PENDING. They are not
+> automatically cancelled or fulfilled.
+>
+> The Asset is unavailable while an active Loan exists.
+> Any later checkout must revalidate Asset eligibility.
+>
+> This is the adopted Sprint 1 implementation policy.
+> Its behavior is verified by TEST-F04-07 using PostgreSQL.
+> This decision supersedes earlier draft references describing
+> Q-02 as awaiting Member 2 confirmation.
+>
 ## 1. Introduction and System Context
 
 BorrowBase is the CPE Equipment Inventory and Borrowing Management System for a hypothetical KMUTT Computer Engineering Department lending service. This specification defines the whole product across three sprints for development, design review and verification.

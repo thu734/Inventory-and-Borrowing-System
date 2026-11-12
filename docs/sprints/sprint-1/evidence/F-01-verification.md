@@ -115,4 +115,27 @@ Observed behavior:
 
 The implementation used for this demonstration was subsequently merged into `sprint1-staging`.
 
-A separate manual browser check on the post-merge staging checkout should
+## 6. Final Integration Evidence Status
+
+The F-04 browser workflow was successfully verified before its
+implementation was merged into sprint1-staging.
+
+The integrated staging implementation was subsequently verified
+using automated backend, frontend and PostgreSQL tests.
+
+Verification results:
+- Backend non-PostgreSQL tests: 61 passed.
+- Frontend tests: 37 passed.
+- F-04 PostgreSQL integration tests: 11 passed.
+- Total: 109 passed across separate successful runs.
+- TypeScript checks and production builds: PASS.
+
+The recorded automated verification used commit 3710af0.
+A separate post-merge staging browser rerun is not claimed
+by these results.
+
+Q-02 behavior was verified by TEST-F04-07:
+competing requests remain PENDING after another request is fulfilled.
+
+The original browser demonstration and automated verification
+are retained as separate forms of evidence.
