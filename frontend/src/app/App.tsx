@@ -4,6 +4,7 @@ import { useAuth } from '../features/auth/AuthProvider';
 import { LoginPage } from '../features/auth/LoginPage';
 import { BorrowerWorkspace } from '../features/borrowing/BorrowerWorkspace';
 import { EquipmentCatalog } from '../features/catalog/EquipmentCatalog';
+import { CustodianWorkspace } from '../features/custodian/CustodianWorkspace';
 
 export function App() {
   const { session, loading, error, retry, logout } = useAuth();
@@ -116,10 +117,7 @@ export function App() {
                 <BorrowerWorkspace />
               </>
             ) : (
-              <p className="muted">
-                Custodians can view equipment availability.
-                The checkout workspace will be added in F-04.
-              </p>
+              <CustodianWorkspace />
             )}
           </section>
         )}
