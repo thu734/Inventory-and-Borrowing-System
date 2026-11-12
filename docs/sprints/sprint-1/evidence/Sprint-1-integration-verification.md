@@ -4,6 +4,14 @@ Tested branch: `sprint1-staging`. Tested commit: `3710af0913d1638a9f185cfe4f8e91
 
 **Outcome:** Automated checks and the real Borrower → Custodian → PostgreSQL workflow passed. Release acceptance remains incomplete: the catalog retains stale availability immediately after checkout, policy approval is unresolved, and release documentation needs reconciliation. No application, schema, migration or test source was changed.
 
+## Documentation merge clarification — November 12, 2026
+
+The execution results below describe the original `3710af0` run and have not been rerun or increased by this documentation merge. Member 2 subsequently confirmed Q-02 in `e78dc65`, superseding this report's historical pending-Q-02 statements. Q-01 is recorded as approved in the F-03 contract. Unrelated security/API approvals remain subject to their review records. The catalog freshness defect and incomplete accessibility, synchronized-race and clean-checkout checks remain unresolved.
+
+The separate F-01 integration report's 109-test total and its repeated final summary refer to narrower, overlapping successful runs. They are not additional to this report's 159-test total. The F-01 report does not claim a post-merge browser rerun; this report separately records one. No combined total or new verification is asserted.
+
+Raw logs/JSON and screenshots referenced by path below remain untracked in the preserved original worktree; they were not copied into this clean merge worktree. Evidence packaging for shared review remains separate. Historical feature reports and the original worktree's uncommitted F-03 supplement are preserved.
+
 ## Safe Git and environment verification
 
 - `git fetch origin` succeeded with authorized access after the sandbox initially denied writing `FETCH_HEAD`. Local HEAD and fetched `origin/sprint1-staging` both equal the tested commit. Incoming path changes: none; no update or collision handling was necessary.
@@ -15,7 +23,7 @@ Tested branch: `sprint1-staging`. Tested commit: `3710af0913d1638a9f185cfe4f8e91
 
 ## Automated execution
 
-Logs: [`artifacts/verification/sprint-1/local-20261112/`](../../../../artifacts/verification/sprint-1/local-20261112/).
+Logs: `artifacts/verification/sprint-1/local-20261112/` (original-worktree artifacts; see clarification above).
 
 | Exact command | Result | Log |
 |---|---|---|
@@ -72,7 +80,7 @@ New retained synthetic fixtures: Asset `S1-VERIFY-80035c90`, model and second Bo
 
 Request: `a09b8ba0-a729-4bc3-ba8f-71da97391952`. Active Loan: `e0d262b4-bd6a-4234-8171-e9d48a4fc50c`. Competing request: `713ebab6-cc3c-45b5-a686-5f9d517326cd`.
 
-Sanitized raw evidence: `browser-results.json`, `browser-states.json`, `database.json`, `environment-preservation.json`, and browser execution logs. Screenshots: [`artifacts/screenshots/sprint-1/integration/local-20261112/`](../../../../artifacts/screenshots/sprint-1/integration/local-20261112/). `05-checkout-success.png` captures the stale catalog alongside successful checkout; `07-custodian-360.png` shows unavailable state after Refresh Equipment. Selected desktop/mobile screenshots were visually inspected. No browser page errors were recorded during the main workflow. Evidence text files were checked for exact configured connection strings/passwords/secrets: zero matches. No cookies, CSRF tokens, storage-state dumps or credential screenshots were saved.
+Sanitized raw evidence: `browser-results.json`, `browser-states.json`, `database.json`, `environment-preservation.json`, and browser execution logs. Screenshots: `artifacts/screenshots/sprint-1/integration/local-20261112/` (original-worktree artifacts; see clarification above). `05-checkout-success.png` captures the stale catalog alongside successful checkout; `07-custodian-360.png` shows unavailable state after Refresh Equipment. Selected desktop/mobile screenshots were visually inspected. No browser page errors were recorded during the main workflow. Evidence text files were checked for exact configured connection strings/passwords/secrets: zero matches. No cookies, CSRF tokens, storage-state dumps or credential screenshots were saved.
 
 ## Contract/STS review and remaining release work
 

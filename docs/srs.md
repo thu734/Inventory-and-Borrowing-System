@@ -1,5 +1,20 @@
 # BorrowBase — Software Requirements Specification
 
+> **Q-02 Final Decision — 12 November 2026**
+>
+> Confirmed by Member 2, the F-04 feature owner.
+> When a Custodian fulfills one BorrowRequest, competing PENDING
+> requests for the same Asset remain PENDING. They are not
+> automatically cancelled or fulfilled.
+>
+> The Asset is unavailable while an active Loan exists.
+> Any later checkout must revalidate Asset eligibility.
+>
+> This is the adopted Sprint 1 implementation policy.
+> Its behavior is verified by TEST-F04-07 using PostgreSQL.
+> This decision supersedes earlier draft references describing
+> Q-02 as awaiting Member 2 confirmation.
+>
 ## 1. Introduction and System Context
 
 BorrowBase is the CPE Equipment Inventory and Borrowing Management System for a hypothetical KMUTT Computer Engineering Department lending service. This specification defines the whole product across three sprints for development, design review and verification.
@@ -153,7 +168,7 @@ Q-01 and Q-02 are retained as identifiers for existing cross-references, not as 
 | ID | Resolution or remaining decision | Status / resolution point |
 |---|---|---|
 | Q-01 | Reject repeat/concurrent PENDING requests for the same Borrower/Asset pair; allow different Borrowers to request the same available Asset. See D-04 and BR-03. | Resolved for S1 |
-| Q-02 | Keep competing requests PENDING after checkout, without automatic fulfillment, cancellation, expiry or priority. Recheck eligibility before a later checkout. See D-05 and BR-10. | Resolved for S1; retain in S2 return regression |
+| Q-02 | Keep competing requests PENDING after checkout, without automatic fulfillment, cancellation, expiry or priority. Recheck eligibility before a later checkout. See D-05 and BR-10. | Confirmed by Member 2, November 12, 2026 (`e78dc65`); retain in S2 return regression |
 | Q-03 | Confirm the proposed seven-day due period, overdue boundary, display timezone and backfill of S1 Loans. | Open; agree before F-06/S2 migration. No due/overdue behavior is required in S1. |
 | Q-04 | Confirm asset-code normalization/immutability/reuse rules, retirement while loaned, search matching, summary semantics and numerical performance targets. S1 serviceability, security and HTTP conventions are settled in D-09/D-11. | Partially resolved; agree remaining items before their S2/S3 contracts and verification. |
 | Q-05 | Confirm deployment constraints and resource access supplied through Lab 5. | Deferred to the team and lecturer/TA before finalizing deployment configuration; does not reopen settled S1 domain policies. |

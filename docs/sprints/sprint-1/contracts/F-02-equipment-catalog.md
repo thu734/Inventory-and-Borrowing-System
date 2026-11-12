@@ -1,5 +1,20 @@
 # F-02 — Equipment Catalog and Availability
 
+> **Q-02 Final Decision — 12 November 2026**
+>
+> Confirmed by Member 2, the F-04 feature owner.
+> When a Custodian fulfills one BorrowRequest, competing PENDING
+> requests for the same Asset remain PENDING. They are not
+> automatically cancelled or fulfilled.
+>
+> The Asset is unavailable while an active Loan exists.
+> Any later checkout must revalidate Asset eligibility.
+>
+> This is the adopted Sprint 1 implementation policy.
+> Its behavior is verified by TEST-F04-07 using PostgreSQL.
+> This decision supersedes earlier draft references describing
+> Q-02 as awaiting Member 2 confirmation.
+>
 Status: **implemented and integrated for Sprint 1; verification partial**. See [integrated verification](../evidence/Sprint-1-integration-verification.md) at `3710af0`; current UI/acceptance limits are recorded below.
 
 ## Traceability and scope
@@ -17,7 +32,7 @@ F-02 provides authenticated Borrower and Custodian list/detail views for physica
 - A `PENDING` `BorrowRequest` does not reserve an Asset.
 - F-02 passes the selected physical `assetId` to F-03. Display metadata is informational; the server revalidates availability when a request is submitted.
 - Q-01 rejects duplicate `PENDING` requests for the same Borrower/Asset pair, including concurrent submissions. F-03 owns enforcement of that request rule.
-- Q-02 implemented behavior retains competing requests `PENDING` after one is fulfilled; F-04 owns checkout transitions. The local revised SRS records Q-02 as resolved, and implementation/tests retain competing requests PENDING. The Three-Sprint Plan still records Member 2 acknowledgement as pending. This is an approval-record conflict; this editorial audit does not grant or infer that acknowledgement.
+- Q-02 implemented behavior retains competing requests `PENDING` after one is fulfilled; F-04 owns checkout transitions. Member 2 confirmed Q-02 on November 12, 2026 in `e78dc65`: competing requests remain PENDING after checkout, the active Loan makes the Asset unavailable, and any later checkout must revalidate eligibility. This supersedes the earlier pending-acknowledgement wording; it does not approve unrelated security/API decisions or full release acceptance.
 - Authentication, role and ownership decisions are enforced server-side.
 
 ## UI specification

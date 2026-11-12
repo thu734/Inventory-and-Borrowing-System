@@ -1,5 +1,20 @@
 # F-03 — Borrowing Requests and Own Records
 
+> **Q-02 Final Decision — 12 November 2026**
+>
+> Confirmed by Member 2, the F-04 feature owner.
+> When a Custodian fulfills one BorrowRequest, competing PENDING
+> requests for the same Asset remain PENDING. They are not
+> automatically cancelled or fulfilled.
+>
+> The Asset is unavailable while an active Loan exists.
+> Any later checkout must revalidate Asset eligibility.
+>
+> This is the adopted Sprint 1 implementation policy.
+> Its behavior is verified by TEST-F04-07 using PostgreSQL.
+> This decision supersedes earlier draft references describing
+> Q-02 as awaiting Member 2 confirmation.
+>
 Status: **implemented and integrated for Sprint 1; local verification recorded, acceptance incomplete**. GitHub issue: [#4](https://github.com/thu734/Inventory-and-Borrowing-System/issues/4). F-01 authentication and SYS-01 database foundations are dependencies.
 
 ## 1. Sources, scope and dependencies
@@ -14,16 +29,16 @@ Included: authenticated Borrower creates a PENDING request for an eligible physi
 
 ## 2. Decisions and integration policy
 
-The API/UI choices below define the implemented F-03 contract. Q-02 behavior is integrated and tested, but its approval record conflicts: the local SRS calls it resolved while the Three-Sprint Plan still records Member 2 acknowledgement as pending. This audit does not grant that acknowledgement.
+The API/UI choices below define the implemented F-03 contract. Member 2 confirmed Q-02 on November 12, 2026 in `e78dc65`: competing requests remain PENDING after checkout, the active Loan makes the Asset unavailable, and any later checkout must revalidate eligibility. This supersedes the earlier pending-acknowledgement wording; it does not approve unrelated security/API decisions or full release acceptance.
 
 | Question | Implemented interpretation / review status | Gate |
 |---|---|---|
 | SRS Q-01: same Borrower/Asset PENDING duplicates | **Approved:** reject with 409 DUPLICATE_PENDING_REQUEST, including concurrent attempts. The F-03 migration adds a partial PostgreSQL unique index and serializes on the Asset row inside a transaction before checking duplicates. | Implemented and covered by the API and PostgreSQL suites. |
-| SRS Q-02: competitors after checkout | **Implemented; approval-record conflict:** F-03 never changes another request or creates a Loan; F-04 leaves competing requests PENDING. | Reconcile the local SRS resolution with the plan's pending Member 2 acknowledgement before claiming approved policy. |
+| SRS Q-02: competitors after checkout | **Confirmed by Member 2, November 12, 2026 (`e78dc65`):** F-03 never changes another request or creates a Loan; F-04 leaves competing requests PENDING. | Q-02 acknowledgement is recorded; S2 return/eligibility regression remains planned. |
 | SRS Q-04: API/validation/UI details | Status/projection/ordering are implemented below, consistent with F-01 and local SRS D-11; full accessibility verification remains incomplete. | Contract approval. |
 | Request racing checkout/serviceability updates | Eligibility is checked under an Asset row lock within the request transaction. Integrated F-04 checkout uses the same Asset-first lock order; future F-07 writers must preserve it. Request can succeed before a later checkout; it is not a reservation. | Shared F-03/F-04 locks and parallel tests inspected; do not infer untested future writers or a barrier-controlled race. |
 
-Q-03 due-date policy is irrelevant to Sprint 1 F-03 and remains untouched. Q-01 is approved, implemented and tested. Q-02 is implemented in F-04, but the local SRS and plan disagree about acknowledgement status; tests do not substitute for the unresolved approval record.
+Q-03 due-date policy is irrelevant to Sprint 1 F-03 and remains untouched. Q-01 is approved, implemented and tested. Q-02 is implemented in F-04 and confirmed by Member 2 in `e78dc65`; tests establish behavior separately from that recorded approval.
 
 ## 3. Borrower workflow and Feature-Level SDS
 
@@ -139,11 +154,11 @@ The executable file `backend/tests/f03.contract.red.test.ts` preserves the three
 
 ## 8. Historical implementation order and November 7 verification
 
-The following checklist and results describe the feature-stage run before F-02/F-04 integration. Its pending integration/browser statements are historical, not current status. Current integrated coverage is referenced in Section 6. Full release acceptance is still incomplete: Q-02/security approval records require reconciliation, full keyboard/accessibility and other recorded checks remain open, and the catalog has the separate immediate post-checkout freshness defect.
+The following checklist and results describe the feature-stage run before F-02/F-04 integration. Its pending integration/browser statements are historical, not current status. Current integrated coverage is referenced in Section 6. Full release acceptance is still incomplete: unrelated security/API approval records require reconciliation, full keyboard/accessibility and other recorded checks remain open, and the catalog has the separate immediate post-checkout freshness defect.
 
 Recorded red run: 7 November 2026, 13:48 Asia/Bangkok; command `npm run test -w backend -- tests/f03.contract.red.test.ts`. Result: **1 file failed, 3 tests failed, 0 passed**. Anonymous POST returned 404 instead of 401; authenticated request and Loan list GETs returned 404 instead of 200. F-01 login setup passed and no database was contacted. This historical run established the missing-route baseline before implementation.
 
-1. Q-01 is approved and implemented with the partial unique index, transaction lock and conflict response. Q-02 is documented as the chosen Sprint 1 policy and requires F-04 confirmation.
+1. Q-01 is approved and implemented with the partial unique index, transaction lock and conflict response. At the original feature-stage run Q-02 required F-04 confirmation; Member 2 subsequently confirmed it on November 12, 2026 (`e78dc65`).
 2. The original three red-phase assertions are preserved and now pass; the expanded API and PostgreSQL specification is implemented and executed.
 3. Prisma-backed creation, owner-scoped queries and guarded routes are mounted before `finishApp()`.
 4. The Borrower request panel and own-record views use the documented F-02 selected-Asset seam; no catalog or checkout substitute was added.

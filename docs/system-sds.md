@@ -1,5 +1,20 @@
 # BorrowBase System-Level Software Design Specification
 
+> **Q-02 Final Decision — 12 November 2026**
+>
+> Confirmed by Member 2, the F-04 feature owner.
+> When a Custodian fulfills one BorrowRequest, competing PENDING
+> requests for the same Asset remain PENDING. They are not
+> automatically cancelled or fulfilled.
+>
+> The Asset is unavailable while an active Loan exists.
+> Any later checkout must revalidate Asset eligibility.
+>
+> This is the adopted Sprint 1 implementation policy.
+> Its behavior is verified by TEST-F04-07 using PostgreSQL.
+> This decision supersedes earlier draft references describing
+> Q-02 as awaiting Member 2 confirmation.
+>
 ## 1. System overview
 
 BorrowBase is a browser-based equipment inventory and borrowing system for a hypothetical KMUTT Computer Engineering Department lending service. It uses synthetic users, equipment and transactions. The system boundary is:
@@ -283,7 +298,7 @@ No Docker image, GCP project, Cloud Run service, Cloud SQL instance or productio
 5. PostgreSQL constraints preserve unique user/asset identities, request/loan relationships, one active Loan per Asset and one pending request per Borrower/Asset pair.
 6. Request creation and checkout use transactions and lock the Asset first. F-04 preserves this ordering and atomically transitions the selected request, creates the Loan and enforces active-loan exclusivity.
 7. F-02 supplies selected physical Asset identity to F-03. F-04 consumes PENDING requests and supplies the real checkout-created Loans retrieved by F-03.
-8. Q-02 implemented behavior: when F-04 fulfills one request and creates a Loan, competing requests remain `PENDING`. The local revised SRS records Q-02 as resolved, and implementation/tests retain competing requests PENDING. The Three-Sprint Plan still records Member 2 acknowledgement as pending. This is an approval-record conflict; this editorial audit does not grant or infer that acknowledgement.
+8. Q-02 implemented behavior: when F-04 fulfills one request and creates a Loan, competing requests remain `PENDING`. Member 2 confirmed Q-02 on November 12, 2026 in `e78dc65`: competing requests remain PENDING after checkout, the active Loan makes the Asset unavailable, and any later checkout must revalidate eligibility. This supersedes the earlier pending-acknowledgement wording; it does not approve unrelated security/API decisions or full release acceptance.
 9. F-05 through F-10 depend on the shared schema and the state transitions established by F-03/F-04. Due-date, history and reporting behavior must not be inferred from Sprint 1 active-loan retrieval.
 
 ## 10. Verification status and review limits
@@ -292,4 +307,4 @@ F-01–F-04 are mounted in the integrated application. The [November 12 integrat
 
 The catalog still displays stale Available state immediately after checkout until Refresh Equipment. API/database availability and checkout exclusivity are correct. This is a known FR-02/FR-06 UI defect, not an approved relaxation of the availability requirement. Full keyboard/accessibility, all real-browser states, a barrier-controlled synchronized checkout race and a new full clean-checkout reproduction remain incomplete. Deployed security and later-sprint features are not verified by local evidence.
 
-The eight-hour session, cookie, hashing and Origin/CSRF mechanisms above describe actual S1 implementation and local SRS D-11. Their description does not resolve formal review caveats retained in the earlier contracts. Q-01 duplicate rejection is explicitly approved in F-03; Q-02 acknowledgement and security/API approval records still require team reconciliation. Q-03 and remaining Q-04/Q-05 refinements remain deferred. No release acceptance or Lab 5 runtime verification is implied.
+The eight-hour session, cookie, hashing and Origin/CSRF mechanisms above describe actual S1 implementation and local SRS D-11. Their description does not resolve formal review caveats retained in the earlier contracts. Q-01 duplicate rejection is explicitly approved in F-03 and Q-02 is confirmed by Member 2 in `e78dc65`; unrelated security/API approval records still require team reconciliation. Q-03 and remaining Q-04/Q-05 refinements remain deferred. No release acceptance or Lab 5 runtime verification is implied.

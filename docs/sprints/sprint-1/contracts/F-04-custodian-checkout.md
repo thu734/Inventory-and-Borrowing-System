@@ -1,6 +1,21 @@
 # F-04 — Custodian Queue, Checkout and Active Loans
 
-Status: **implemented and integrated for Sprint 1; acceptance incomplete**. See [integrated verification](../evidence/Sprint-1-integration-verification.md) at `3710af0`; policy approval and UI/verification limitations remain below.
+> **Q-02 Final Decision — 12 November 2026**
+>
+> Confirmed by Member 2, the F-04 feature owner.
+> When a Custodian fulfills one BorrowRequest, competing PENDING
+> requests for the same Asset remain PENDING. They are not
+> automatically cancelled or fulfilled.
+>
+> The Asset is unavailable while an active Loan exists.
+> Any later checkout must revalidate Asset eligibility.
+>
+> This is the adopted Sprint 1 implementation policy.
+> Its behavior is verified by TEST-F04-07 using PostgreSQL.
+> This decision supersedes earlier draft references describing
+> Q-02 as awaiting Member 2 confirmation.
+>
+Status: **implemented and integrated for Sprint 1; acceptance incomplete**. See [integrated verification](../evidence/Sprint-1-integration-verification.md) at `3710af0`; the confirmed Q-02 policy and remaining UI/verification limitations are distinguished below.
 
 ## Traceability and scope
 
@@ -18,7 +33,7 @@ F-04 lets a Custodian inspect department requests and active Loans and check out
 - Checkout uses one database transaction and locks the Asset first with `FOR UPDATE`, then revalidates the request and Asset state.
 - The transaction atomically changes the selected request from `PENDING` to `FULFILLED`, records `fulfilledAt` and creates exactly one active `Loan`.
 - PostgreSQL `Loan_one_active_per_asset` enforces at most one active Loan per Asset. A conflict commits no partial checkout state.
-- Q-02 implemented behavior retains competing requests `PENDING`, without automatic fulfillment, cancellation or expiry. After return, eligibility must be rechecked (S2 regression remains planned). The local revised SRS records Q-02 as resolved, and implementation/tests retain competing requests PENDING. The Three-Sprint Plan still records Member 2 acknowledgement as pending. This is an approval-record conflict; this editorial audit does not grant or infer that acknowledgement.
+- Q-02 implemented behavior retains competing requests `PENDING`, without automatic fulfillment, cancellation or expiry. After return, eligibility must be rechecked (S2 regression remains planned). Member 2 confirmed Q-02 on November 12, 2026 in `e78dc65`: competing requests remain PENDING after checkout, the active Loan makes the Asset unavailable, and any later checkout must revalidate eligibility. This supersedes the earlier pending-acknowledgement wording; it does not approve unrelated security/API decisions or full release acceptance.
 - Q-01 is enforced by F-03 when requests are created: duplicate `PENDING` requests for the same Borrower/Asset pair, including concurrent duplicates, are rejected. F-04 does not add a different duplicate policy.
 
 ## UI specification
@@ -98,7 +113,7 @@ The schema and migrations provide:
 - request status/`fulfilledAt` consistency;
 - restrictive historical foreign keys.
 
-The Asset-first lock ordering is implemented by F-03 request creation and F-04 checkout and must also be preserved by future writers. Different Borrowers may have `PENDING` requests for the same Asset, but only one checkout can succeed while the Asset is active-loaned. Competing requests remain `PENDING` in implementation; the Q-02 approval-record conflict above remains unresolved.
+The Asset-first lock ordering is implemented by F-03 request creation and F-04 checkout and must also be preserved by future writers. Different Borrowers may have `PENDING` requests for the same Asset, but only one checkout can succeed while the Asset is active-loaned. Competing requests remain `PENDING` in implementation; Member 2 confirmed this Q-02 policy on November 12, 2026 (`e78dc65`).
 
 Within one PostgreSQL transaction, checkout must:
 
@@ -139,7 +154,7 @@ The following cases specify F-04 verification; executed results and remaining co
 | TEST-F04-04 / AC-F04-04 | Unit and PostgreSQL integration | PENDING requests for MAINTENANCE, RETIRED and already-loaned Assets | Attempt checkout for each unavailable Asset | Reject checkout with 409 ASSET_UNAVAILABLE. Request remains PENDING, and no new Loan or partial changes are committed. |
 | TEST-F04-05 / AC-F04-05 | API and PostgreSQL integration | Request already FULFILLED with an existing Loan | Attempt checkout of the same request again | Return 409 REQUEST_NOT_PENDING. No duplicate Loan is inserted and existing records remain unchanged. |
 | TEST-F04-06 / AC-F04-06 | PostgreSQL concurrency integration | One SERVICEABLE Asset with no active Loan; two different Borrowers have PENDING requests for that Asset | Execute two concurrent Custodian checkout transactions for the same Asset | Exactly one checkout succeeds. The other returns a conflict. Exactly one active Loan exists, and the losing request remains PENDING without partial changes. |
-| TEST-F04-07 / AC-F04-07 | PostgreSQL integration | Two different Borrowers have PENDING requests for the same available Asset | Fulfill one request, then retrieve both requests | The fulfilled request becomes FULFILLED and produces one active Loan. The competing request remains PENDING and is not automatically fulfilled or cancelled. This verifies implemented Q-02 behavior; it does not establish team approval. |
+| TEST-F04-07 / AC-F04-07 | PostgreSQL integration | Two different Borrowers have PENDING requests for the same available Asset | Fulfill one request, then retrieve both requests | The fulfilled request becomes FULFILLED and produces one active Loan. The competing request remains PENDING and is not automatically fulfilled or cancelled. This verifies implemented Q-02 behavior; Member 2's separate confirmation is recorded above. |
 | TEST-F04-08 / AC-F04-08 | API validation and security integration | Malformed request ID, unknown request ID, invalid query parameters, invalid Origin/CSRF and simulated database failure | Submit invalid API requests and checkout operations | Return safe 400, 403, 404 or 500 responses as appropriate. No SQL, stack traces, session values or sensitive data are disclosed. No failed checkout leaves partial changes. |
 | TEST-F04-09 / AC-F04-09 | UI component and end-to-end | Custodian is logged in; seeded PENDING requests; loading, empty and conflict conditions available | Open the Custodian workspace, inspect the queue, perform checkout and test keyboard and narrow-screen navigation | Correct loading, empty, success, conflict and failure states appear. Successful checkout updates the displayed request and Loan. Controls are keyboard-accessible and responsive. |
 
@@ -147,7 +162,7 @@ The following cases specify F-04 verification; executed results and remaining co
 
 [Integrated verification](../evidence/Sprint-1-integration-verification.md) records 5 checkout-rule, 15 API, 11 PostgreSQL and 9 UI tests passing for F-04 at `3710af0`, plus real UI checkout/Loan retrieval and browser API rejection checks. The 40 targeted tests overlap the report's 159-test total; do not add them again. No new run occurred in this editorial audit.
 
-AC-F04-06/NFR-04 remains partial for the synchronized-race criterion: the real PostgreSQL test uses parallel `Promise.all` calls without a barrier-controlled race. AC-F04-09 has component-state and sampled responsive/browser evidence, but full keyboard/accessibility and every browser fault state remain incomplete. Immediate catalog availability remains stale after checkout until Refresh Equipment; persisted/API state is correct. This does not relax FR-02/FR-06 or imply complete release acceptance. Q-02 approval records still require reconciliation.
+AC-F04-06/NFR-04 remains partial for the synchronized-race criterion: the real PostgreSQL test uses parallel `Promise.all` calls without a barrier-controlled race. AC-F04-09 has component-state and sampled responsive/browser evidence, but full keyboard/accessibility and every browser fault state remain incomplete. Immediate catalog availability remains stale after checkout until Refresh Equipment; persisted/API state is correct. This does not relax FR-02/FR-06 or imply complete release acceptance. Q-02 is confirmed; unrelated security/API approvals and release acceptance are not established by these test results.
 
 All planned tests must be executed against the implemented feature.
 
