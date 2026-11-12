@@ -1,9 +1,9 @@
 # F-04 — Custodian Checkout Verification
 
-**Project:** BorrowBase — Inventory and Borrowing System  
-**Feature:** F-04 Custodian Queue, Checkout and Active Loans  
-**Branch:** `feature/f04-custodian-checkout`  
-**Tested code commit:** `[CODE_COMMIT_ID]`  
+**Project:** BorrowBase — Inventory and Borrowing System
+**Feature:** F-04 Custodian Queue, Checkout and Active Loans
+**Branch:** `feature/f04-custodian-checkout`
+**Tested code commit:** `ca2fc51`
 **Verification date:** November 12, 2026
 
 ## 1. Implementation Summary
