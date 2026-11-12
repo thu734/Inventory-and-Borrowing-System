@@ -4,13 +4,37 @@ BorrowBase is a hypothetical KMUTT Computer Engineering equipment lending system
 
 ## Features
 
-Implemented:
+The Sprint 1 increment implements the core equipment borrowing workflow.
 
-- **F-01 Authentication and RBAC:** sign-in, current-user identity, sign-out, database-backed sessions, active-account checks, backend role guards, login limiting and Origin/CSRF protection.
-- **SYS-01 database foundation:** PostgreSQL schema, Prisma migrations, synthetic seed data and database integrity tests.
-- Responsive authentication UI for Borrowers and Custodians.
+### Implemented in Sprint 1
 
-Planned: equipment catalog (F-02), borrowing requests and own records (F-03), Custodian checkout (F-04), followed by returns, inventory maintenance and reporting. The complete Sprint 1 borrowing workflow is not yet implemented. F-01 role guards do not establish future domain ownership-query enforcement.
+- **SYS-01 — Database Foundation:** PostgreSQL database, Prisma schema and migrations, synthetic seed data, and data integrity constraints.
+- **F-01 — Authentication and Role-Based Access Control:** Borrower and Custodian login, logout, database-backed sessions, authentication guards, role authorization, and Origin/CSRF protection.
+- **F-02 — Equipment Catalog and Availability:** Browse equipment, view Asset details, and check availability based on serviceability and active Loans.
+- **F-03 — Borrowing Request Management:** Borrowers can submit equipment requests and view their borrowing records.
+- **F-04 — Custodian Checkout and Loan Creation:** Custodians can review pending requests, check out eligible Assets, and create active Loan records using a database transaction.
+
+### Sprint 1 Borrowing Workflow
+
+1. The Borrower signs in.
+2. The Borrower browses the Equipment Catalog.
+3. The Borrower selects available equipment and submits a borrowing request.
+4. The request is stored with PENDING status.
+5. The Custodian signs in and reviews pending requests.
+6. The Custodian checks out eligible equipment.
+7. The request changes to FULFILLED and an active Loan is created.
+8. The equipment becomes unavailable while the Loan is active.
+9. The Borrower can view the active Loan in the application.
+
+### Planned for Future Sprints
+
+The following capabilities are planned for later development:
+
+- Equipment returns and Loan completion.
+- Inventory maintenance and administration.
+- Reporting and additional management features.
+
+The system currently uses synthetic accounts and equipment data for local development and testing. It is not connected to real university services.
 
 ## Technology stack
 
