@@ -70,9 +70,9 @@ The feature inventory is authoritative for names, responsibilities, dependencies
 | Module | Responsibility and primary interfaces | Status and dependencies |
 |---|---|---|
 | F-01 Authentication and RBAC | Login, current identity, logout, database-backed sessions, active-account checks, Origin/CSRF protection and backend role guards | Implemented for Sprint 1; uses SYS-01 `User` and `Session`; supports all protected modules |
-| F-02 Equipment Catalog | List/detail views for physical Assets, model/category information, serviceability and computed availability | Sprint 1 catalog work; depends on F-01 and SYS-01; provides the selected-Asset interface consumed by F-03 |
-| F-03 Borrowing Requests and Own Records | Create eligible `PENDING` requests and retrieve only the authenticated Borrower's requests and active Loans | Implemented in the F-03 feature work; depends on F-01, F-02's selected-Asset interface and SYS-01; F-04 supplies real checked-out Loans |
-| F-04 Custodian Checkout | Custodian request/loan queue, exclusive checkout, atomic fulfillment and department active-loan retrieval | Sprint 1 integration work; depends on F-01, F-02, F-03 request creation and SYS-01; requires the shared Asset-lock convention |
+| F-02 Equipment Catalog | List/detail views for physical Assets, model/category information, serviceability and computed availability | Implemented and integrated for Sprint 1; depends on F-01 and SYS-01; provides the selected-Asset interface consumed by F-03 |
+| F-03 Borrowing Requests and Own Records | Create eligible `PENDING` requests and retrieve only the authenticated Borrower's requests and active Loans | Implemented and integrated for Sprint 1; depends on F-01, F-02's selected-Asset interface and SYS-01; F-04 supplies real checked-out Loans |
+| F-04 Custodian Checkout | Custodian request/loan queue, exclusive checkout, atomic fulfillment and department active-loan retrieval | Implemented and integrated for Sprint 1; depends on F-01, F-02, F-03 request creation and SYS-01; requires the shared Asset-lock convention |
 | F-05 Returns | Record returns and recompute availability from serviceability and active-loan state | Sprint 2 planned; depends on F-04 and SYS-01 |
 | F-06 Due/Overdue Management | Due-date policy, overdue calculation and upgrade/backfill of Sprint 1 Loans | Sprint 2 planned; depends on F-04 and the agreed Q-03 policy |
 | F-07 Inventory Administration | Custodian maintenance of models, Assets, serviceability and historical references | Sprint 2 planned; depends on F-01, F-02, F-04 and SYS-01 |
@@ -151,7 +151,7 @@ The authenticated application shell contains the BorrowBase header, session boot
 |---|---|
 | Authentication | Labeled login form with masked password, pending state, generic credential errors and retryable connection errors |
 | Borrower navigation | F-03 provides My Requests and My Active Loans, request/detail views and the selected-Asset request panel |
-| Custodian navigation | F-04 will provide department request/active-loan queue and checkout views; later modules add returns, administration and reporting |
+| Custodian navigation | F-04 provides department request/active-loan queue and checkout views; later modules add returns, administration and reporting |
 | Equipment Catalog | F-02 provides model/Asset list and detail views with serviceability and computed availability; it invokes F-03 through the selected physical Asset ID |
 | Future operations | F-05 through F-10 add returns, due/overdue, inventory, search, history and reporting screens in later sprints |
 
@@ -185,6 +185,11 @@ F-01 provides:
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/logout`
 
+F-02 provides:
+
+- `GET /api/v1/assets`
+- `GET /api/v1/assets/:id`
+
 F-03 provides:
 
 - `POST /api/v1/borrow-requests`
@@ -193,13 +198,20 @@ F-03 provides:
 - `GET /api/v1/me/loans`
 - `GET /api/v1/me/loans/:id`
 
+F-04 provides:
+
+- `GET /api/v1/custodian/borrow-requests`
+- `GET /api/v1/custodian/borrow-requests/:id`
+- `GET /api/v1/custodian/loans`
+- `POST /api/v1/custodian/borrow-requests/:id/checkout`
+
 F-03 request DTOs explicitly project request/loan identity, timestamps and Asset model information. It does not expose password hashes, session hashes, email addresses or another Borrower's identity.
 
 ### 6.3 Request processing
 
 Protected requests authenticate first, then apply the required role. POST mutations additionally require the exact configured Origin, a valid session-bound CSRF token, JSON content type and strict body validation. F-03 accepts only `{ "assetId": "<uuid>" }`; the server obtains the borrower from session context.
 
-F-03 creation locks the selected Asset inside a Prisma transaction, rechecks serviceability and active-loan state, checks the pending-request rule and creates the request. F-04 must use the same Asset-first lock ordering for checkout. F-02 and F-04 endpoint details remain in their feature contracts until implemented.
+F-03 creation locks the selected Asset inside a Prisma transaction, rechecks serviceability and active-loan state, checks the pending-request rule and creates the request. F-04 uses the same Asset-first lock ordering for checkout. F-02 and F-04 response schemas and validation details are specified in their implemented feature contracts.
 
 ## 7. Security and access control
 
@@ -269,7 +281,15 @@ No Docker image, GCP project, Cloud Run service, Cloud SQL instance or productio
 3. F-01 derives identity and role from a database-backed session. Client-supplied borrower IDs and roles are not authoritative.
 4. Ownership is enforced in backend queries and response projections, not by hidden UI controls.
 5. PostgreSQL constraints preserve unique user/asset identities, request/loan relationships, one active Loan per Asset and one pending request per Borrower/Asset pair.
-6. Request creation and future checkout use transactions and lock the Asset first. F-04 must preserve this ordering and atomically transition the selected request, create the Loan and enforce active-loan exclusivity.
+6. Request creation and checkout use transactions and lock the Asset first. F-04 preserves this ordering and atomically transitions the selected request, creates the Loan and enforces active-loan exclusivity.
 7. F-02 supplies selected physical Asset identity to F-03. F-04 consumes PENDING requests and supplies the real checkout-created Loans retrieved by F-03.
-8. Q-02 policy: when F-04 fulfills one request and creates a Loan, competing requests remain `PENDING`. This is the chosen Sprint 1 integration policy and remains pending Member 2 acknowledgement; it is not an already confirmed teammate agreement.
+8. Q-02 implemented behavior: when F-04 fulfills one request and creates a Loan, competing requests remain `PENDING`. The local revised SRS records Q-02 as resolved, and implementation/tests retain competing requests PENDING. The Three-Sprint Plan still records Member 2 acknowledgement as pending. This is an approval-record conflict; this editorial audit does not grant or infer that acknowledgement.
 9. F-05 through F-10 depend on the shared schema and the state transitions established by F-03/F-04. Due-date, history and reporting behavior must not be inferred from Sprint 1 active-loan retrieval.
+
+## 10. Verification status and review limits
+
+F-01–F-04 are mounted in the integrated application. The [November 12 integrated verification](sprints/sprint-1/evidence/Sprint-1-integration-verification.md) records execution at `3710af0`: 159 unique passing tests in successful runs, typechecks/builds and real browser/PostgreSQL checkout, ownership, conflict and restart checks. Application/schema/test source is unchanged through documentation baseline `21ad3e3`; this editorial audit did not rerun those checks.
+
+The catalog still displays stale Available state immediately after checkout until Refresh Equipment. API/database availability and checkout exclusivity are correct. This is a known FR-02/FR-06 UI defect, not an approved relaxation of the availability requirement. Full keyboard/accessibility, all real-browser states, a barrier-controlled synchronized checkout race and a new full clean-checkout reproduction remain incomplete. Deployed security and later-sprint features are not verified by local evidence.
+
+The eight-hour session, cookie, hashing and Origin/CSRF mechanisms above describe actual S1 implementation and local SRS D-11. Their description does not resolve formal review caveats retained in the earlier contracts. Q-01 duplicate rejection is explicitly approved in F-03; Q-02 acknowledgement and security/API approval records still require team reconciliation. Q-03 and remaining Q-04/Q-05 refinements remain deferred. No release acceptance or Lab 5 runtime verification is implied.

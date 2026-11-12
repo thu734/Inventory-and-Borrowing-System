@@ -1,6 +1,6 @@
 # F-02 — Equipment Catalog and Availability
 
-Status: **Sprint 1 engineering contract; planned implementation**
+Status: **implemented and integrated for Sprint 1; verification partial**. See [integrated verification](../evidence/Sprint-1-integration-verification.md) at `3710af0`; current UI/acceptance limits are recorded below.
 
 ## Traceability and scope
 
@@ -17,7 +17,7 @@ F-02 provides authenticated Borrower and Custodian list/detail views for physica
 - A `PENDING` `BorrowRequest` does not reserve an Asset.
 - F-02 passes the selected physical `assetId` to F-03. Display metadata is informational; the server revalidates availability when a request is submitted.
 - Q-01 rejects duplicate `PENDING` requests for the same Borrower/Asset pair, including concurrent submissions. F-03 owns enforcement of that request rule.
-- Proposed Q-02 (pending team agreement): competing requests remain `PENDING` after one request is fulfilled. F-04 owns checkout and request-state transitions. The decision must be confirmed in the SRS before Sprint 1 release.
+- Q-02 implemented behavior retains competing requests `PENDING` after one is fulfilled; F-04 owns checkout transitions. The local revised SRS records Q-02 as resolved, and implementation/tests retain competing requests PENDING. The Three-Sprint Plan still records Member 2 acknowledgement as pending. This is an approval-record conflict; this editorial audit does not grant or infer that acknowledgement.
 - Authentication, role and ownership decisions are enforced server-side.
 
 ## UI specification
@@ -94,9 +94,7 @@ Tests use isolated disposable PostgreSQL databases for persistence fixtures. No 
 
 ### Detailed Software Test Specification (STS)
 
-The following tests are planned for F-02.
-Tests involving persistence must use an isolated PostgreSQL
-database with synthetic test data.
+The following cases specify F-02 verification. Executed API/PostgreSQL/component and selected browser results are recorded below; full accessibility/browser coverage is not claimed. Persistence tests use isolated PostgreSQL with synthetic fixtures.
 
 | Test ID / AC | Test Level | Preconditions | Action | Expected Result |
 |---|---|---|---|---|
@@ -107,9 +105,11 @@ database with synthetic test data.
 | TEST-F02-05 / AC-F02-05 | API validation and integration | Empty catalog, unknown Asset ID, malformed UUID and simulated database failure | Request list/detail endpoints with these conditions | Empty list returns items=[]; invalid requests return safe 4xx errors; database failures return sanitized 5xx errors. |
 | TEST-F02-06 / AC-F02-06 | UI component and accessibility | Loading, empty, failed-response and narrow-screen scenarios | Navigate the catalog with mouse and keyboard | Loading, empty and error states are visible; controls have labels and keyboard focus; no horizontal overflow occurs. |
 
-These test cases describe planned verification.
-Execution results, test file names, pass/fail counts and tested
-commit IDs will be recorded after implementation.
+### Executed verification and remaining limits
+
+[Integrated verification](../evidence/Sprint-1-integration-verification.md) records `backend/tests/f02.api.test.ts`, `backend/tests/f02.postgres.test.ts` (9 passing PostgreSQL cases) and `frontend/src/features/catalog/catalog.ui.test.tsx`, plus the real catalog-to-F-03 browser handoff at `3710af0`. Aggregate counts and exact commands belong to that report and are not new executions here.
+
+Known defect: immediately after F-04 checkout, the already-loaded catalog still shows Available until Refresh Equipment, although API/database availability is false. AC-F02-02 is verified for the server state matrix but not fully satisfied by immediate UI freshness. AC-F02-06 remains partial: sampled viewport/state checks passed; complete keyboard/accessibility and every real-browser state were not run. Keep the UI availability requirement unchanged; a code fix and re-verification are separate work. Team approval and final release acceptance are not implied.
 
 ## Product Definition of Done
 
