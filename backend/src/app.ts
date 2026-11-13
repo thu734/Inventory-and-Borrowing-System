@@ -1,6 +1,7 @@
 import express, { type ErrorRequestHandler, type Request, type RequestHandler, type Response } from 'express';
 import cookieParser from 'cookie-parser';
 import { randomUUID } from 'node:crypto';
+import { extname } from 'node:path';
 import { z } from 'zod';
 import type { AuthStore, AuthUser, Role, SessionRecord } from './modules/auth/auth.store.ts';
 import { csrfFor, hashPassword, newToken, tokenHash, validCsrf, verifyPassword } from './modules/auth/credentials.ts';
@@ -9,6 +10,7 @@ import { LoginLimiter } from './modules/auth/login-limiter.ts';
 
 export interface AppOptions {
   store: AuthStore; origin: string; csrfSecret: string; secureCookies: boolean;
+  ready?: () => Promise<unknown>;
   now?: () => Date;
 }
 export class ApiError extends Error {
@@ -37,6 +39,19 @@ export function createApp(options: AppOptions) {
     next();
   });
   app.use(cookieParser());
+  app.get('/api/ready', async (_req, res) => {
+    if (!options.ready) {
+      res.status(503).json({ status: 'not_ready' });
+      return;
+    }
+
+    try {
+      await options.ready();
+      res.json({ status: 'ready' });
+    } catch {
+      res.status(503).json({ status: 'not_ready' });
+    }
+  });
   const cookie = { httpOnly: true, secure: options.secureCookies, sameSite: 'lax' as const, path: '/' };
   const readToken = (req: Request): string | undefined => {
     const value: unknown = req.cookies?.cpe_session;
@@ -112,6 +127,19 @@ export function createApp(options: AppOptions) {
   // Member 2 mounts real catalog/checkout routes using these guards before
   // finishApp(). There are no pretend protected domain endpoints.
   return { app, authenticate, requireRole, requireOrigin, requireCsrf };
+}
+
+export function mountFrontend(app: express.Express, frontendDist: string) {
+  app.use(express.static(frontendDist, { index: false }));
+  app.get(/^(?!\/api(?:\/|$)).*/, (req, res, next) => {
+    if (extname(req.path) || !req.accepts('html')) {
+      next();
+      return;
+    }
+    res.sendFile('index.html', { root: frontendDist }, error => {
+      if (error) next(error);
+    });
+  });
 }
 
 export function finishApp(app: express.Express) {

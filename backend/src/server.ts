@@ -1,7 +1,8 @@
-import { createApp, finishApp } from './app.ts';
+import { createApp, finishApp, mountFrontend } from './app.ts';
 import { readEnv } from './config/env.ts';
 import { PrismaAuthStore, type PrismaAuthDatabase } from './modules/auth/auth.store.ts';
 import type { PrismaClient as GeneratedPrismaClient } from '@prisma/client';
+import { fileURLToPath } from 'node:url';
 import { PrismaBorrowingStore } from './modules/borrowing/borrowing.store.ts';
 import { mountBorrowingRoutes } from './modules/borrowing/borrowing.routes.ts';
 import { PrismaCatalogStore } from './modules/catalog/prisma-catalog.store.ts';
@@ -19,11 +20,13 @@ async function main() {
   const db = prisma as PrismaAuthDatabase & { $connect(): Promise<void>; $disconnect(): Promise<void> };
   await db.$connect();
   const auth = createApp({ store: new PrismaAuthStore(db), origin: env.APP_ORIGIN,
-    csrfSecret: env.CSRF_SECRET, secureCookies: env.NODE_ENV === 'production' });
+    csrfSecret: env.CSRF_SECRET, secureCookies: env.NODE_ENV === 'production',
+    ready: () => prisma.$queryRaw`SELECT 1` });
   mountBorrowingRoutes(auth, new PrismaBorrowingStore(prisma as GeneratedPrismaClient));
-mountCatalogRoutes(auth, new PrismaCatalogStore(prisma as GeneratedPrismaClient));
-mountCustodianRoutes(auth, new PrismaCustodianStore(prisma as GeneratedPrismaClient));
-  const server = finishApp(auth.app).listen(env.PORT, () => console.info(`API listening on port ${env.PORT}`));
+  mountCatalogRoutes(auth, new PrismaCatalogStore(prisma as GeneratedPrismaClient));
+  mountCustodianRoutes(auth, new PrismaCustodianStore(prisma as GeneratedPrismaClient));
+  mountFrontend(auth.app, fileURLToPath(new URL('../../frontend/dist/', import.meta.url)));
+  const server = finishApp(auth.app).listen(env.PORT, () => console.info(`BorrowBase listening on port ${env.PORT}`));
   const stop = () => server.close(() => { void db.$disconnect().finally(() => process.exit(0)); });
   process.once('SIGTERM', stop); process.once('SIGINT', stop);
 }
