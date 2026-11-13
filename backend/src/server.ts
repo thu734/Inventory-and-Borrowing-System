@@ -3,6 +3,7 @@ import { readEnv } from './config/env.ts';
 import { PrismaAuthStore, type PrismaAuthDatabase } from './modules/auth/auth.store.ts';
 import type { PrismaClient as GeneratedPrismaClient } from '@prisma/client';
 import { fileURLToPath } from 'node:url';
+import { createShutdown } from './shutdown.ts';
 import { PrismaBorrowingStore } from './modules/borrowing/borrowing.store.ts';
 import { mountBorrowingRoutes } from './modules/borrowing/borrowing.routes.ts';
 import { PrismaCatalogStore } from './modules/catalog/prisma-catalog.store.ts';
@@ -27,8 +28,8 @@ async function main() {
   mountCustodianRoutes(auth, new PrismaCustodianStore(prisma as GeneratedPrismaClient));
   mountFrontend(auth.app, fileURLToPath(new URL('../../frontend/dist/', import.meta.url)));
   const server = finishApp(auth.app).listen(env.PORT, () => console.info(`BorrowBase listening on port ${env.PORT}`));
-  const stop = () => server.close(() => { void db.$disconnect().finally(() => process.exit(0)); });
-  process.once('SIGTERM', stop); process.once('SIGINT', stop);
+  const stop = createShutdown(server, () => db.$disconnect());
+  process.on('SIGTERM', stop); process.on('SIGINT', stop);
 }
 main().catch(() => {
   console.error('API startup failed. Check local configuration and Member 2\'s generated Prisma client, migrations and database connectivity. No fallback accounts or database are used.');
