@@ -36,6 +36,32 @@ describe('production runtime', () => {
     return finishApp(built.app);
   }
 
+  it('reports public liveness as minimal JSON without authentication or a readiness callback', async () => {
+    const app = createRuntime(await createFrontendFixture());
+    const response = await request(app).get('/api/health');
+
+    expect(response.status).toBe(200);
+    expect(response.type).toBe('application/json');
+    expect(response.body).toEqual({ status: 'ok' });
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('keeps liveness independent of database failures and leaves readiness responsible for probing', async () => {
+    const ready = vi.fn().mockRejectedValue(new Error('private database connection details'));
+    const app = createRuntime(await createFrontendFixture(), ready);
+
+    const health = await request(app).get('/api/health');
+    expect(health.status).toBe(200);
+    expect(health.body).toEqual({ status: 'ok' });
+    expect(ready).not.toHaveBeenCalled();
+
+    const readiness = await request(app).get('/api/ready');
+    expect(readiness.status).toBe(503);
+    expect(readiness.body).toEqual({ status: 'not_ready' });
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
+
   it('reports database readiness without exposing connection details', async () => {
     const app = createRuntime(await createFrontendFixture(), async () => {});
 

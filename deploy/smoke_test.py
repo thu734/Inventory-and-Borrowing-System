@@ -29,6 +29,7 @@ def check(base, request=get, pause=time.sleep):
             or parsed.path or parsed.query or parsed.fragment):
         raise ValueError("An exact HTTPS origin is required")
     checks = [
+        ("/api/health", 200, "ok"),
         ("/api/ready", 200, "ready"),
         ("/", 200, "html"),
         ("/api/v1/auth/me", 401, "UNAUTHENTICATED"),
@@ -42,6 +43,8 @@ def check(base, request=get, pause=time.sleep):
                     raise ValueError("Unexpected HTTP status")
                 if expected == "html":
                     valid = "text/html" in headers.get("Content-Type", "") and b'id="root"' in body
+                elif expected == "ok":
+                    valid = json.loads(body) == {"status": "ok"} and headers.get("Cache-Control") == "no-store"
                 elif expected == "ready":
                     valid = json.loads(body).get("status") == "ready" and headers.get("Cache-Control") == "no-store"
                 else:

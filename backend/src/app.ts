@@ -40,6 +40,8 @@ export function createApp(options: AppOptions) {
     next();
   });
   app.use(cookieParser());
+  // Liveness is public and independent of database readiness.
+  app.get('/api/health', (_req, res) => res.status(200).json({ status: 'ok' }));
   // Keep at most one probe in flight, including after an HTTP deadline expires.
   // A stalled driver operation cannot create an ever-growing query backlog.
   let probe: Promise<boolean> | undefined;

@@ -42,6 +42,12 @@ jobs:
       - name: Build frontend
         run: npm run build -w frontend
 
+      - name: Validate deployment scripts offline
+        run: |
+          bash -n deploy/config.sh
+          bash -n deploy/deploy.sh
+          python3 -B -m unittest discover -s deploy/tests -p 'test_*.py' -v
+
   unit-api-ui:
     name: Unit, API and UI tests
     runs-on: ubuntu-latest
