@@ -89,10 +89,12 @@ For all cards, Definition of Done = acceptance criteria met, actual evidence att
 
 ### L5-05 — Episode 4: CI on pull requests
 
-- Objective/work/files: `.github/workflows/ci-docker.yml` or an equivalent workflow, deployment document, root scripts only if required. Branch `feature/l5-05-pr-ci`.
-- Dependencies: L5-04; GitHub permissions and official required gates. Independently start: no.
-- Acceptance: PRs to lab5-staging/main run reproducible install, Prisma generation, typechecks/build, Docker image build, all targeted API/UI/unit tests and separately guarded real-PostgreSQL suites. Failed check prevents readiness. CI credentials synthetic only; untrusted PRs receive no cloud auth/secrets.
+- Objective/work/files: `.github/workflows/pr-ci.yml`, this evidence record and the deployment CI guidance. Branch `ci/l5-05-pr-checks`.
+- Dependencies: L5-03 and L5-04 merged. Independently start: no.
+- Acceptance: PRs to lab5-staging/main run `npm ci`, Prisma generation, typechecks/build, backend unit/API tests, UI tests, all four guarded PostgreSQL suites in separate migrated databases, and a non-publishing `linux/amd64` Docker build. Failed commands remain failing checks. CI uses synthetic database credentials only and has no deployment secrets.
 - Verify: `npm ci`, `npm run db:generate`, `npm run typecheck`, `npm run build`, `npm run test:unit`, explicit four API files in §7, `npm run test:ui`; database jobs in §7. Evidence: successful and intentional controlled failing PR/check URLs, stable job names. Risk/recovery: `test:api` only covers auth; `npm test` mixes incompatible DB guards. Split jobs/databases, fix failure on feature branch. Handoff: exact names for Episode 6 rules.
+
+> The original L5-05 verification checklist above is superseded by the implemented commands and database mapping in the C-01 evidence record below; hosted PR evidence remains pending.
 
 ### L5-06 — Episode 5: First deployment to GCP
 
@@ -160,7 +162,7 @@ The following is the official traceability baseline. Status describes BorrowBase
 | R-02 | All settings come from environment; document variables; commit no real secrets | 2–3 / `.env.docker.example`, `docker.md` | Variable inventory and clean-clone run; C-03 | Local configuration verified; cloud runtime pending |
 | R-03 | Public GCP URL supports UI, API and database workflow | 5 / Cloud Run and smoke evidence | Public URL screenshots and C-04 | Not started |
 | R-04 | Persistent database survives restart and redeploy | 2, 5, 8 / Cloud SQL and persistence evidence | Before/after record evidence; C-05 | Planned |
-| R-05 | Relevant PRs run meaningful build and automated tests | 4 / CI workflow | Passing PR run and test summary; C-01 | Not implemented |
+| R-05 | Relevant PRs run meaningful build and automated tests | 4 / CI workflow | Passing PR run and test summary; C-01 | Workflow implemented; hosted evidence pending |
 | R-06 | Passing check is required; failing temporary PR cannot merge | 6 / ruleset and failing PR | Blocked merge evidence; C-02 | Not implemented |
 | R-07 | Accepted releases deploy from `main` through review → CI → merge → deploy | 7 / deploy workflow and release PR | Release PR, pipeline and deployment evidence; C-06 | Planned |
 | R-08 | Identify each release commit and document repeatable release procedure | 7 / `deployment.md`, SHA/digest evidence | Running revision matches SHA; C-06 | Planned |
@@ -168,12 +170,57 @@ The following is the official traceability baseline. Status describes BorrowBase
 | R-10 | Label Lab 5 Issues/PRs; preserve commits, contract revisions and CI history | 1–7 / `lab5` label and history | Label and immutable history evidence; C-06 | Label pending |
 | R-11 | Both members participate in requirements, testing, AI supervision, implementation, review and deployment | 1–9 / Issues, commits, PR authorship/review | Contribution evidence in GitHub and submission | Not yet evidenced |
 | R-12 | Repository remains public through grading; no secrets committed | 1–9 / repository settings and secret review | Public repository and clean history review | Repository public; ongoing |
-| C-01 | Normal PR runs build and all automated tests and passes | 4 / CI run | CI link, tested SHA and summary | Not run |
+| C-01 | Normal PR runs build and all automated tests and passes | 4 / CI run | CI link, tested SHA and summary | Workflow implemented; hosted evidence pending |
 | C-02 | Temporary-branch PR with one failing test cannot merge | 6 / required check/ruleset | Failed check and blocked merge | Not run |
 | C-03 | Fresh clone builds/runs using only safe `.env.docker.example` values filled in | 2–3 / clean checkout and container | Commands and output in `docker.md` | Passed for local Docker on 14 Nov 2026; cloud not in scope |
 | C-04 | Public URL supports sign-in, main business action and one rejection/restriction | 5 / deployed BorrowBase | URL-visible screenshots | Not run |
 | C-05 | Record created before restart/redeploy remains afterward | 8 / Cloud SQL evidence | Before/after screenshots | Not run |
 | C-06 | Reviewed staging change reaches `main`, deploys, and running revision matches commit | 7 / PRs, CI, Cloud Run | PR links, pipeline run and revision | Not run |
+
+### C-01 — Episode 4 PR CI evidence (L5-05)
+
+Workflow: [`.github/workflows/pr-ci.yml`](../../../.github/workflows/pr-ci.yml). It uses `pull_request` for `lab5-staging` and `main`, Ubuntu-hosted runners, Node.js 24.14.0, and the root npm workspace lockfile. The only token permission is `contents: read`. CI does not use cloud credentials, deployment tokens, production database/CSRF secrets, or publish images.
+
+Stable PR check names:
+
+- `Typecheck and build`
+- `Unit, API and UI tests`
+- `PostgreSQL integration tests`
+- `Docker build`
+
+Commands and expected result:
+
+```text
+npm ci
+npm run db:generate
+npm run typecheck
+npm run build -w backend
+npm run build -w frontend
+npm test -- --exclude '**/*.postgres.test.ts'   # from backend/
+npm run test:ui
+docker buildx build --platform linux/amd64 --load -t borrowbase-pr-ci:<tested-sha> .
+```
+
+The PostgreSQL job uses an isolated PostgreSQL 16 service and four separate disposable databases. Each receives `npm run db:migrate` before its selected test; only F-01 is explicitly seeded with its required synthetic borrower/custodian credentials.
+
+| Suite | Database | Seed |
+|---|---|---|
+| `auth.postgres.test.ts` (F-01) | `borrowbase_sys01_auth_ci` | Required; seeded synthetic users use the exact fixture passwords expected by the test |
+| `f02.postgres.test.ts` | `borrowbase_sys01_f02_ci` | None; suite creates and cleans its fixtures |
+| `f03.postgres.test.ts` | `borrowbase_sys01_f03_ci` | None; suite creates and cleans its fixtures |
+| `f04.postgres.test.ts` | `borrowbase_sys01_f02_test` | None; suite requires this exact database name and creates/cleans its fixtures |
+
+The service password is unique to the Actions run and masked. Each test step sets `SYS01_TEST_DATABASE=true`; the suites' own database-name guards remain enabled. The databases are never shared with L5-04 or production.
+
+The Actions summary records the tested PR merge SHA, PR head SHA, workflow run URL and four job results. Vitest test counts/assertion failures and migration/Docker details remain available in the corresponding job logs; no separate artifact upload is configured.
+
+**Local verification only (not GitHub-hosted):** `actionlint .github/workflows/pr-ci.yml` passed with actionlint 1.7.12. `npm ci`, `npm run db:generate`, `npm run typecheck`, both workspace production builds, the backend non-PostgreSQL suite (12 files / 71 tests), the UI suite (4 files / 37 tests), and the four isolated PostgreSQL suites (5 + 9 + 31 + 11 tests) passed. F-01 alone was seeded. A temporary deliberately failing assertion caused the backend test command to exit 1 while the other 71 backend tests passed; the probe file was removed. The cached local command `docker buildx build --platform linux/amd64 --load -t borrowbase-pr-ci:local .` passed.
+
+A separate cold `--no-cache` local Docker build did **not** complete: Docker Buildx returned an RPC/EOF error during the build. A read-only status check afterward showed the original L5-04 app and PostgreSQL containers still healthy; some candidate containers reported exit code 255. No existing container was manually restarted or removed. This is not a successful cold-build result and does not establish a GitHub-hosted Docker result.
+
+**Hosted evidence is not yet available:** this workflow has not run on GitHub because no commit was pushed and no PR was opened. Successful PR run URL: pending. Tested SHA: pending. Hosted deliberate failing PR/check URL and blocked-merge evidence: pending for C-02; the local failure injection above is not a substitute.
+
+Recommended branch protection/rulesets for **both** `lab5-staging` and `main`: require all four stable checks above before merge. Repository settings have not been changed; configure and verify the actual check names after the first Actions run.
 
 Rubric: **CI and quality gate — 30 points; Docker and reproducible configuration — 20 points; GCP deployment and persistence — 35 points; repeatable release pipeline — 15 points.**
 
