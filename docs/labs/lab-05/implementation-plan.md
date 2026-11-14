@@ -27,7 +27,7 @@ Read local [README](../../../README.md), [SRS](../../srs.md), [SDS](../../system
 | CI / protection | GitHub Actions workflows: 0. Rulesets: none returned. Live main and sprint1-staging protected=false; no required checks reported |
 | Issues / labels | #28 is the only open issue returned; Sprint 1 issues closed. Existing labels include documentation, bug, enhancement, accessibility and standard defaults; no lab5 label |
 | Projects | Repository projects are enabled, but board contents could not be read with the available token (`read:project` missing). Reuse the existing board after authorized inspection; do not create a duplicate |
-| Deployment files | No Dockerfile, compose file, .github workflow or deployment scripts in current file inventory. Deployment draft exists only on retained remote branch before this work |
+| Deployment files | L5-04 Dockerfile, Compose, ignore rules and local/C-03 docs are implemented on this branch; CI and cloud deployment remain pending |
 | Git diagnosis | Apple Git fails through missing Command Line Tools/xcrun. `/opt/homebrew/bin/git` works. No installation or system configuration changed |
 
 Refresh live refs and status before later implementation; these are dated observations. Never reset, stash, overwrite, force-push or commit unrelated edits. Plan publication requires separate approval. Do not move current dirty work to another branch without a deliberate preservation checkpoint.
@@ -156,8 +156,8 @@ The following is the official traceability baseline. Status describes BorrowBase
 
 | ID | Official requirement/check | Episode / artifact | Verification and evidence | Status |
 |---|---|---|---|---|
-| R-01 | Clean-clone Docker build produces a working container | 3 / `Dockerfile`, `.dockerignore`, Compose if used | Clean build/run output; C-03 | Planned |
-| R-02 | All settings come from environment; document variables; commit no real secrets | 2–3 / `.env.example`, `deployment.md` | Variable inventory and clean-clone run; C-03 | Partially implemented; not verified |
+| R-01 | Clean-clone Docker build produces a working container | 3 / `Dockerfile`, `.dockerignore`, Compose if used | Clean build/run output; C-03 | Local Docker build/run verified |
+| R-02 | All settings come from environment; document variables; commit no real secrets | 2–3 / `.env.docker.example`, `docker.md` | Variable inventory and clean-clone run; C-03 | Local configuration verified; cloud runtime pending |
 | R-03 | Public GCP URL supports UI, API and database workflow | 5 / Cloud Run and smoke evidence | Public URL screenshots and C-04 | Not started |
 | R-04 | Persistent database survives restart and redeploy | 2, 5, 8 / Cloud SQL and persistence evidence | Before/after record evidence; C-05 | Planned |
 | R-05 | Relevant PRs run meaningful build and automated tests | 4 / CI workflow | Passing PR run and test summary; C-01 | Not implemented |
@@ -170,7 +170,7 @@ The following is the official traceability baseline. Status describes BorrowBase
 | R-12 | Repository remains public through grading; no secrets committed | 1–9 / repository settings and secret review | Public repository and clean history review | Repository public; ongoing |
 | C-01 | Normal PR runs build and all automated tests and passes | 4 / CI run | CI link, tested SHA and summary | Not run |
 | C-02 | Temporary-branch PR with one failing test cannot merge | 6 / required check/ruleset | Failed check and blocked merge | Not run |
-| C-03 | Fresh clone builds/runs using only `.env.example` values filled in | 2–3 / clean checkout and container | Commands and output | Not run |
+| C-03 | Fresh clone builds/runs using only safe `.env.docker.example` values filled in | 2–3 / clean checkout and container | Commands and output in `docker.md` | Passed for local Docker on 14 Nov 2026; cloud not in scope |
 | C-04 | Public URL supports sign-in, main business action and one rejection/restriction | 5 / deployed BorrowBase | URL-visible screenshots | Not run |
 | C-05 | Record created before restart/redeploy remains afterward | 8 / Cloud SQL evidence | Before/after screenshots | Not run |
 | C-06 | Reviewed staging change reaches `main`, deploys, and running revision matches commit | 7 / PRs, CI, Cloud Run | PR links, pipeline run and revision | Not run |
