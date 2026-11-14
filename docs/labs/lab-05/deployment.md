@@ -54,9 +54,44 @@ The local application and isolated PostgreSQL Compose workflow, explicit migrati
 
 ## Migrations and seed policy
 
-Committed Prisma migrations are the authority. `npm run db:migrate` invokes `prisma migrate deploy`; no production `migrate dev`, reset or schema push. Generate client at build time. Local Docker exposes a separate opt-in maintenance image for one-off migrations. Cloud still needs a controlled migration runner with DB connectivity (proposed dedicated Cloud Run job, pending guide/cost review). Run migration once before updating service traffic; stop release on failure. No per-instance startup migrations.
+Committed Prisma migrations are authoritative. `npm run db:migrate` invokes `prisma migrate deploy`; never use production reset, schema push or `migrate dev`. The L5-04 `build` target retains Prisma CLI, schema, migrations, seed and tsx; the final `runtime` target intentionally excludes maintenance tooling. Application startup performs neither migration nor seeding.
 
-Bootstrap synthetic accounts/equipment once with authorized secret inputs and recorded result; do not routinely rerun seed, which rewrites passwords and equipment serviceability. No production seed in Docker build/CD startup. Do not add schema changes merely to deploy. If a later migration is necessary, review backward compatibility and backup/recovery before release; traffic rollback cannot undo schema changes.
+The reviewed seed creates missing approved accounts/models/assets without updating existing credentials, roles, active flags, descriptions, associations, requests, loans or sessions. It validates required configuration before writes and sanitizes CLI failures. It is retryable, not fully transactional; a failed run can leave newly created records. Bootstrap remains separately authorized, never automatic on routine deployment. Do not upload local database contents or Sprint 1 verification fixtures.
+
+## Episode 5 Step 5.0 — local script adaptation
+
+Status: code preparation only. No Step 5.1 Cloud Shell access, Step 5.2 deployment dry run, cloud resource verification, migration or bootstrap has been performed for this adaptation. The reference is the lecturer starter's `deploy/deploy.sh`, README and read-only smoke script; its TokTickIT paths, seed command and secret variables are not BorrowBase defaults.
+
+`deploy/config.sh` is the naming contract for this script and future `release.sh`/deployment workflow:
+
+| Item | Prepared value |
+|---|---|
+| Project / region | `cpe334-borrowbase` / `asia-southeast1` |
+| Registry / application image | `borrowbase` / `borrowbase` |
+| Maintenance image | `borrowbase-maintenance` |
+| SQL instance / database / user | `borrowbase-pg` / `borrowbase` / `borrowbase` |
+| Runtime / maintenance identities | `borrowbase-runtime` / `borrowbase-maintenance` |
+| Migration / explicit bootstrap jobs | `borrowbase-migrate` / `borrowbase-bootstrap` |
+| Runtime secrets | `borrowbase-database-url`, `borrowbase-csrf-secret` |
+| Bootstrap-only secrets | `borrowbase-seed-borrower-password`, `borrowbase-seed-custodian-password` |
+
+Names are planned, not verified resources. Future real execution requires a clean checkout matching current remote `main`; a feature branch can be previewed only. `PROJECT_ID`/`REGION` accept the future workflow's `GCP_PROJECT_ID`/`GCP_REGION` aliases and reject a different project/region. Reviewed release, current passing checks, L5-02 billing/budget evidence, quotas, existing-resource inventory and operator authorization remain prerequisites. THB 1,800 is alerts-only; this script does not create or change billing/budgets.
+
+Prepared behavior:
+
+- Enable required APIs, create missing registry/PostgreSQL 16 Enterprise `db-f1-micro` resources, and retain existing resources. New SQL uses 10 GB SSD, storage auto-increase off and a backup window; cost/availability must be reviewed before execution. Existing engine/region mismatches or lookup errors stop the script.
+- Generate credentials privately and preserve existing enabled secret versions. Use Prisma's Unix-socket `host=/cloudsql/PROJECT:REGION:INSTANCE`, schema `public` and pool limit 3. Validate reused DB/CSRF secret contents without printing them. Never reset an existing DB user's password to reconstruct a missing secret.
+- Grant Cloud SQL Client to dedicated runtime/maintenance accounts and secret access per secret. The public application receives only DB/CSRF secrets; seed credentials are restricted to maintenance. No WIF, deployer IAM or GitHub rules are configured here.
+- `deploy/cloudbuild.yaml` builds the existing Dockerfile's `runtime` and `build` targets from one source SHA, then both images are resolved to immutable digests. `.gcloudignore` excludes local environment files, dependencies, credentials and artifacts from upload. Dockerfile, Compose and `.github/workflows/pr-ci.yml` are preserved.
+- Run a single-task migration-only job with `npm run db:migrate`; failure prevents service deployment. Bootstrap is off by default. An explicitly approved `--bootstrap-demo` creates a separate job running `npm run db:seed`, with retries disabled. If that job already exists, stop for manual inspection rather than automatically re-executing it. This protects one-time bootstrap but requires separate recovery review after a failed bootstrap.
+- A new service is initially private with an unusable `.invalid` browser origin while its assigned URL is obtained. Only then deploy publicly with the exact HTTPS Cloud Run origin, production cookies, port 3000, 1 CPU, 512 MiB, minimum 0 / maximum 1 instance and concurrency 20. Existing services retain their canonical origin. Origin/CSRF/RBAC code is unchanged. Traffic is directed to the latest ready revision and its image is checked against the selected digest.
+- Read-only smoke uses GET `/api/ready` (`status=ready`, no-store), `/` (React HTML), `/api/v1/auth/me` (401) and an unknown API (JSON 404). BorrowBase has no `/api/health` or public categories endpoint. No smoke login, cookies or domain writes occur. Public Borrower/Custodian acceptance remains a later manual step.
+
+Local checks: `bash -n deploy/deploy.sh`, `bash -n deploy/config.sh`, and `python3 -B -m unittest discover -s deploy/tests -p 'test_*.py' -v`. Offline tests replace every cloud invocation and HTTP request; they do not invoke the deployment entrypoint in dry-run mode. Executed Step 5.0 checks passed: both Bash syntax checks, Python syntax parsing, Cloud Build YAML parsing with Ruby/Psych, and 14 offline unit/stub tests. ShellCheck is not installed. Actual Cloud SDK acceptance, IAM propagation, builds, secret injection and public HTTPS behavior are unverified.
+
+For the user's later Step 5.2 only: `DRY_RUN=1 bash deploy/deploy.sh`; include `--bootstrap-demo` only when reviewing an explicitly approved initial bootstrap. The preview prints conditional create operations and placeholders, not a verified resource inventory. It performs no cloud calls, credential generation or provisioning. This command has not been executed during Step 5.0.
+
+Future `release.sh`/workflow must source the same names, build both artifacts for the accepted main SHA, update the migration job with the **maintenance** digest and service with the **application** digest, and never invoke bootstrap on releases or rollback. Rollback skips migrations and seed. The existing PR CI is not a reusable deployment workflow; WIF/merge gates remain Member 2's L5-07 work, and main-only automatic deployment is L5-08. No release script or deployment workflow is asserted to exist yet.
 
 ## CI, release and identity
 
