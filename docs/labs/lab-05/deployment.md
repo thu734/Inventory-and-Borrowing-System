@@ -112,3 +112,148 @@ Before provisioning, confirm project, quotas, region, smallest adequate SQL conf
 No new tests, cloud resource inspection, deployment, persistence or rollback executed in this planning task. Historical Sprint 1 results and limits are in [integration evidence](../../sprints/sprint-1/evidence/Sprint-1-integration-verification.md). Known Prisma audit findings, process-local limiter and incomplete accessibility/race/clean-checkout evidence remain disclosed.
 
 For each future operation, record episode/issue, owner/reviewer, branch/PR/tested SHA, files, exact commands and actual results, sanitized evidence, variable names, blockers and next safe action using the [handoff format](implementation-plan.md#8-kanban-and-handoff). Reviewer approval and permanent task ownership remain pending.
+
+## L5-03 — Production Runtime Verification
+
+### Objective
+
+Verify that BorrowBase runs as a compiled production application using a single Node.js service that serves both the React frontend and Express APIs, without requiring the Vite development server.
+
+### Local Environment
+
+| Component | Configuration |
+|---|---|
+| Operating System | Windows |
+| Node.js | v24.14.0 |
+| npm | 11.9.0 |
+| PostgreSQL | Version 16, local Docker |
+| Runtime Port | 3100 |
+| Runtime Mode | Production |
+| Test Database | Disposable local PostgreSQL |
+| Implementation PR | #39 |
+| Issue | #30 |
+
+### Verified Build Commands
+
+```powershell
+npm run db:generate
+npm run typecheck
+npm run build
+```
+
+**Result:** All commands passed successfully.
+
+### Verified Automated Tests
+
+```powershell
+npm exec --workspace backend -- vitest run tests/unit tests/auth.api.test.ts tests/f02.api.test.ts tests/f03.contract.red.test.ts tests/f04.api.test.ts tests/production-runtime.test.ts tests/shutdown.test.ts
+
+npm run test:ui
+```
+
+PostgreSQL integration test commands were executed separately with `DATABASE_URL` pointing to the appropriate disposable database and `SYS01_TEST_DATABASE=true`.
+
+```powershell
+npm exec --workspace backend -- vitest run tests/auth.postgres.test.ts
+npm exec --workspace backend -- vitest run tests/f02.postgres.test.ts
+npm exec --workspace backend -- vitest run tests/f03.postgres.test.ts
+npm exec --workspace backend -- vitest run tests/f04.postgres.test.ts
+```
+
+| Test Suite | Result |
+|---|---|
+| Backend non-database tests | 71 PASS |
+| Frontend tests | 37 PASS |
+| Authentication PostgreSQL | 5 PASS |
+| Catalog PostgreSQL | 9 PASS |
+| Borrow Request PostgreSQL | 31 PASS |
+| Custodian PostgreSQL | 11 PASS |
+| **Total across separate runs** | **164 PASS** |
+
+The combined `npm test` command initially failed because PostgreSQL suites required different disposable database configurations. Each integration suite was subsequently verified separately.
+
+### Production Startup
+
+The compiled application was started using:
+
+```powershell
+npm run start -w backend
+```
+
+The local verification used:
+
+- `NODE_ENV=production`
+- `PORT=3100`
+- `APP_ORIGIN=https://localhost:3100`
+- A local PostgreSQL `DATABASE_URL`
+- A generated `CSRF_SECRET`
+
+No credentials or secrets are included in this document.
+
+The configured HTTPS origin was used for production validation, while local smoke requests were made over HTTP. This does not constitute verification of live HTTPS authentication.
+
+### HTTP Smoke Test Results
+
+| Endpoint | Expected | Actual |
+|---|---|---|
+| `/` | 200 HTML | PASS |
+| `/api/ready` | 200 JSON | PASS |
+| `/api/does-not-exist` | 404 JSON | PASS |
+| `/some/spa/route` | 200 HTML | PASS |
+
+### Database Readiness and Recovery
+
+Readiness was verified under three conditions:
+
+1. PostgreSQL running — HTTP 200, `{"status":"ready"}`
+2. PostgreSQL stopped — HTTP 503, `{"status":"not_ready"}`
+3. PostgreSQL restarted — HTTP 200, `{"status":"ready"}`
+
+All three checks passed.
+
+### Network Verification
+
+The Node.js server listened on port 3100 using the IPv6 wildcard address `::`.
+
+An IPv4 request to `127.0.0.1:3100/api/ready` returned HTTP 200.
+
+### Security Verification
+
+Existing automated tests passed for:
+
+- Authentication and authorization
+- Session persistence and revocation
+- Role-based access control
+- Origin and CSRF validation
+
+Secure HTTPS authentication must be verified again after cloud deployment.
+
+### Migration and Seed Separation
+
+Prisma migrations were applied to local disposable databases before application startup.
+
+Demo seeding was performed separately for the F-01 authentication integration tests.
+
+Routine production startup did not run migrations or seeding.
+
+### Final Verification
+
+- [x] Compiled React frontend and Express API
+- [x] Production startup without Vite
+- [x] Unknown API JSON 404
+- [x] Safe SPA fallback
+- [x] Database readiness HTTP 200/503
+- [x] Database recovery
+- [x] Authentication and security regression tests
+- [x] TypeScript and production builds
+- [x] Local port and IPv4 verification
+- [x] Migration and seeding separation
+- [x] Local verification evidence documented
+- [x ] Teammate PR approval
+- [ ] Live HTTPS authentication verification (deployment stage)
+
+### Conclusion
+
+BorrowBase successfully passed its local production runtime, build, security regression and database integration verification.
+
+L5-03 is ready for teammate review. Live HTTPS behavior will be verified during cloud deployment.
