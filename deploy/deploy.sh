@@ -185,7 +185,13 @@ main() {
   if [[ "$DRY_RUN" == 0 ]]; then
     local instance
     instance=$(read_cloud sql instances describe "$SQL_INSTANCE" --format=json)
-    printf '%s' "$instance" | python3 -c 'import json,sys; v=json.load(sys.stdin); sys.exit(0 if v.get("databaseVersion")=="POSTGRES_16" and v.get("region")==sys.argv[1] else 1)' "$REGION" || fail 'Existing SQL instance has an unexpected engine or region.'
+    printf '%s' "$instance" | python3 -c '
+import json,sys
+v=json.load(sys.stdin); s=v.get("settings", {})
+ok=(v.get("databaseVersion")=="POSTGRES_16" and v.get("region")==sys.argv[1]
+    and s.get("edition")=="ENTERPRISE" and s.get("tier")=="db-f1-micro"
+    and s.get("storageAutoResize") is False)
+sys.exit(0 if ok else 1)' "$REGION" || fail 'Existing SQL instance differs from the reviewed engine, region, edition, tier or storage auto-increase policy; inspect manually.'
   fi
   if [[ "$DRY_RUN" == 1 ]] || ! exists sql databases describe "$DB_NAME" --instance="$SQL_INSTANCE"; then
     run_cmd gcloud sql databases create "$DB_NAME" --instance="$SQL_INSTANCE" --project="$PROJECT_ID"

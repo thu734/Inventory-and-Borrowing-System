@@ -26,7 +26,7 @@ if a[:3]==['artifacts','repositories','describe']:
 if a[:3]==['artifacts','repositories','create']:s['artifact']=True;done()
 if a[:3]==['sql','instances','describe']:
  if not s.get('sql'):absent()
- done(json.dumps({'databaseVersion':'POSTGRES_15' if scenario=='wrong-engine' else 'POSTGRES_16','region':'asia-southeast1'}))
+ done(json.dumps({'databaseVersion':'POSTGRES_15' if scenario=='wrong-engine' else 'POSTGRES_16','region':'asia-southeast1','settings':{'edition':'ENTERPRISE','tier':'db-custom-4-15360' if scenario=='wrong-tier' else 'db-f1-micro','storageAutoResize':scenario=='auto-increase'}}))
 if a[:3]==['sql','instances','create']:s['sql']=True;done()
 if a[:3]==['sql','databases','describe']:
  if s.get('database'):done()
@@ -146,6 +146,28 @@ main "$@"
         result, state = self.run_stub(scenario='wrong-engine')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(any(c[:3] == ['run', 'jobs', 'execute'] for c in state['calls']))
+
+    def test_reused_sql_cost_policy_mismatch_stops_before_migration(self):
+        for scenario in ['wrong-tier', 'auto-increase']:
+            with self.subTest(scenario=scenario):
+                result, state = self.run_stub(scenario=scenario)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any(c[:3] == ['run', 'jobs', 'execute'] for c in state['calls']))
+                self.assertFalse(any(c[:3] == ['sql', 'instances', 'patch'] for c in state['calls']))
+
+    def test_preview_command_wrapper_never_executes_its_argument(self):
+        # Exercise only the command wrapper, never the deployment/dry-run entrypoint.
+        code = '''source "$DEPLOY_SCRIPT"
+DRY_RUN=1
+forbidden() { printf 'MUTATION_EXECUTED'; return 99; }
+run_cmd forbidden --password=test-private-value
+'''
+        result = subprocess.run(['bash', '-c', code], env={**os.environ, 'DEPLOY_SCRIPT': str(SCRIPT)},
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn('MUTATION_EXECUTED', result.stdout + result.stderr)
+        self.assertNotIn('test-private-value', result.stdout + result.stderr)
+        self.assertIn('<REDACTED>', result.stderr)
 
     def test_rerun_preserves_secrets_and_does_not_recreate_resources(self):
         first, state = self.run_stub()
