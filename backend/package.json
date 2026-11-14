@@ -2,6 +2,7 @@
   "name": "@cpe/backend", "private": true, "type": "module", "version": "0.1.0",
   "scripts": {
     "dev": "node --env-file-if-exists=.env --watch src/server.ts",
+    "start": "node dist/server.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

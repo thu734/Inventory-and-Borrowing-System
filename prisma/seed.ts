@@ -1,15 +1,29 @@
-
 import { PrismaClient, Role, Serviceability } from '@prisma/client';
 import { hash } from 'argon2';
 
-export function requiredSeedPassword(name: string) {
-  const value = process.env[name];
+export function requiredSeedPassword(name: string, env: NodeJS.ProcessEnv = process.env) {
+  const value = env[name];
 
   if (!value || value.length < 12) {
     throw new Error(`${name} must be set and contain at least 12 characters`);
   }
 
   return value;
+}
+
+// Validate every input before constructing the CLI client or writing any records.
+export function readSeedConfiguration(env: NodeJS.ProcessEnv = process.env) {
+  const borrowerPassword = requiredSeedPassword('SEED_BORROWER_PASSWORD', env);
+  const custodianPassword = requiredSeedPassword('SEED_CUSTODIAN_PASSWORD', env);
+  try {
+    const url = new URL(env.DATABASE_URL ?? '');
+    if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname || url.pathname.length < 2) {
+      throw new Error();
+    }
+  } catch {
+    throw new Error('DATABASE_URL must identify a PostgreSQL database');
+  }
+  return { borrowerPassword, custodianPassword };
 }
 
 async function upsertUser(
@@ -21,12 +35,8 @@ async function upsertUser(
 ) {
   return prisma.user.upsert({
     where: { normalizedEmail: email },
-    update: {
-      displayName,
-      role,
-      isActive: true,
-      passwordHash: await hash(password)
-    },
+    // Existing identities, including disabled or changed accounts, are authoritative.
+    update: {},
     create: {
       normalizedEmail: email,
       displayName,
@@ -36,13 +46,14 @@ async function upsertUser(
   });
 }
 
-export async function runSeed(prisma: PrismaClient) {
+export async function runSeed(prisma: PrismaClient, env: NodeJS.ProcessEnv = process.env) {
+  const { borrowerPassword, custodianPassword } = readSeedConfiguration(env);
   await upsertUser(
     prisma,
     'borrower@example.test',
     'Demo Borrower',
     Role.BORROWER,
-    requiredSeedPassword('SEED_BORROWER_PASSWORD')
+    borrowerPassword
   );
 
   await upsertUser(
@@ -50,7 +61,7 @@ export async function runSeed(prisma: PrismaClient) {
     'custodian@example.test',
     'Demo Custodian',
     Role.CUSTODIAN,
-    requiredSeedPassword('SEED_CUSTODIAN_PASSWORD')
+    custodianPassword
   );
 
   const laptopModel = await prisma.equipmentModel.upsert({
@@ -60,9 +71,7 @@ export async function runSeed(prisma: PrismaClient) {
         category: 'Computers'
       }
     },
-    update: {
-      description: 'Synthetic department laptop fixture'
-    },
+    update: {},
     create: {
       name: 'ThinkPad Laptop',
       category: 'Computers',
@@ -77,9 +86,7 @@ export async function runSeed(prisma: PrismaClient) {
         category: 'Embedded'
       }
     },
-    update: {
-      description: 'Synthetic embedded-systems fixture'
-    },
+    update: {},
     create: {
       name: 'Raspberry Pi Kit',
       category: 'Embedded',
@@ -91,10 +98,7 @@ export async function runSeed(prisma: PrismaClient) {
     where: {
       assetCode: 'BB-LAP-001'
     },
-    update: {
-      equipmentModelId: laptopModel.id,
-      serviceability: Serviceability.SERVICEABLE
-    },
+    update: {},
     create: {
       assetCode: 'BB-LAP-001',
       equipmentModelId: laptopModel.id,
@@ -106,10 +110,7 @@ export async function runSeed(prisma: PrismaClient) {
     where: {
       assetCode: 'BB-RPI-001'
     },
-    update: {
-      equipmentModelId: boardModel.id,
-      serviceability: Serviceability.MAINTENANCE
-    },
+    update: {},
     create: {
       assetCode: 'BB-RPI-001',
       equipmentModelId: boardModel.id,
@@ -119,6 +120,7 @@ export async function runSeed(prisma: PrismaClient) {
 }
 
 async function main() {
+  readSeedConfiguration();
   const prisma = new PrismaClient();
 
   try {
@@ -134,8 +136,8 @@ if (
   scriptPath === 'prisma/seed.ts' ||
   scriptPath?.endsWith('/prisma/seed.ts')
 ) {
-  main().catch(error => {
-    console.error(error);
+  main().catch(() => {
+    console.error('Demo seed failed. Check seed configuration, database connectivity and migrations. No credentials or database error details are logged.');
     process.exitCode = 1;
   });
 }

@@ -1,0 +1,214 @@
+name: BorrowBase PR CI
+
+on:
+  pull_request:
+    branches:
+      - lab5-staging
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: borrowbase-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-build:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: npm
+
+      - name: Install locked workspaces
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+
+      - name: Typecheck workspaces
+        run: npm run typecheck
+
+      - name: Build backend
+        run: npm run build -w backend
+
+      - name: Build frontend
+        run: npm run build -w frontend
+
+  unit-api-ui:
+    name: Unit, API and UI tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: npm
+
+      - name: Install locked workspaces
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+
+      - name: Run backend unit and API tests
+        working-directory: backend
+        run: npm test -- --exclude '**/*.postgres.test.ts'
+
+      - name: Run frontend UI tests
+        run: npm run test:ui
+
+  postgres-integration:
+    name: PostgreSQL integration tests
+    runs-on: ubuntu-latest
+    env:
+      CI_PG_USER: borrowbase_ci
+      CI_PG_PASSWORD: ci-borrowbase-${{ github.run_id }}-${{ github.run_attempt }}
+      PGUSER: borrowbase_ci
+      PGPASSWORD: ci-borrowbase-${{ github.run_id }}-${{ github.run_attempt }}
+    services:
+      postgres:
+        image: postgres:16@sha256:63e83b5a3dc36a917dccb76fe1bd2ac51f1ec9c1deb47ff20d4f04233bf6eae9
+        env:
+          POSTGRES_USER: borrowbase_ci
+          POSTGRES_PASSWORD: ci-borrowbase-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: borrowbase_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U borrowbase_ci -d borrowbase_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: npm
+
+      - name: Install locked workspaces
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+
+      - name: Mask disposable database credential
+        run: echo "::add-mask::$CI_PG_PASSWORD"
+
+      - name: Create separate disposable test databases
+        run: |
+          set -euo pipefail
+          for database in \
+            borrowbase_sys01_auth_ci \
+            borrowbase_sys01_f02_ci \
+            borrowbase_sys01_f03_ci \
+            borrowbase_sys01_f02_test
+          do
+            createdb --host=127.0.0.1 --username="$CI_PG_USER" \
+              --maintenance-db=postgres "$database"
+          done
+
+      - name: Migrate, seed and test F-01 authentication
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_PG_USER }}:${{ env.CI_PG_PASSWORD }}@127.0.0.1:5432/borrowbase_sys01_auth_ci?schema=public
+          SYS01_TEST_DATABASE: "true"
+          SEED_BORROWER_PASSWORD: local-borrower-password
+          SEED_CUSTODIAN_PASSWORD: local-custodian-password
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$DATABASE_URL"
+          echo "::add-mask::$SEED_BORROWER_PASSWORD"
+          echo "::add-mask::$SEED_CUSTODIAN_PASSWORD"
+          npm run db:migrate
+          npm run db:seed
+          npm test -w backend -- tests/auth.postgres.test.ts
+
+      - name: Migrate and test F-02 catalog integration
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_PG_USER }}:${{ env.CI_PG_PASSWORD }}@127.0.0.1:5432/borrowbase_sys01_f02_ci?schema=public
+          SYS01_TEST_DATABASE: "true"
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$DATABASE_URL"
+          npm run db:migrate
+          npm test -w backend -- tests/f02.postgres.test.ts
+
+      - name: Migrate and test F-03 borrowing integration
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_PG_USER }}:${{ env.CI_PG_PASSWORD }}@127.0.0.1:5432/borrowbase_sys01_f03_ci?schema=public
+          SYS01_TEST_DATABASE: "true"
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$DATABASE_URL"
+          npm run db:migrate
+          npm test -w backend -- tests/f03.postgres.test.ts
+
+      - name: Migrate and test F-04 checkout integration
+        env:
+          DATABASE_URL: postgresql://${{ env.CI_PG_USER }}:${{ env.CI_PG_PASSWORD }}@127.0.0.1:5432/borrowbase_sys01_f02_test?schema=public
+          SYS01_TEST_DATABASE: "true"
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$DATABASE_URL"
+          npm run db:migrate
+          npm test -w backend -- tests/f04.postgres.test.ts
+
+  docker-build:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build production image for linux/amd64
+        run: docker buildx build --platform linux/amd64 --load -t borrowbase-pr-ci:${GITHUB_SHA} .
+
+  ci-evidence:
+    name: CI evidence summary
+    if: ${{ always() }}
+    needs:
+      - typecheck-build
+      - unit-api-ui
+      - postgres-integration
+      - docker-build
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      BUILD_RESULT: ${{ needs.typecheck-build.result }}
+      UNIT_API_UI_RESULT: ${{ needs.unit-api-ui.result }}
+      POSTGRES_RESULT: ${{ needs.postgres-integration.result }}
+      DOCKER_RESULT: ${{ needs.docker-build.result }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Record tested revisions and check outcomes
+        run: |
+          {
+            echo "## BorrowBase PR CI evidence"
+            echo
+            echo "- Tested merge SHA: \`$GITHUB_SHA\`"
+            echo "- PR head SHA: \`$PR_HEAD_SHA\`"
+            echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "| Stable check | Result |"
+            echo "|---|---|"
+            echo "| Typecheck and build | $BUILD_RESULT |"
+            echo "| Unit, API and UI tests | $UNIT_API_UI_RESULT |"
+            echo "| PostgreSQL integration tests | $POSTGRES_RESULT |"
+            echo "| Docker build | $DOCKER_RESULT |"
+            echo
+            echo "Vitest counts, assertion failures, migration output, and Docker build logs are retained in the corresponding job logs."
+          } >> "$GITHUB_STEP_SUMMARY"
