@@ -201,3 +201,79 @@ Both the application and PostgreSQL containers subsequently reported healthy sta
 **Result: PASS — Data persistence and automatic readiness recovery verified.**
 
 The hardened application image was also verified to run as UID 1000 without the unused `prisma`, `@prisma/config` and `deepmerge-ts` package directories. The npm dependency audit findings remain documented separately.
+## Final C-03 Clean Checkout and Hardened Image Verification
+
+**Verification date:** 14 November 2026  
+**Branch:** `feature/l5-04-docker`  
+**Initial implementation commit:** `00f7d1b`
+
+### Clean Checkout Docker Build
+
+A clean Git checkout was created from the committed local feature branch in a separate temporary directory.
+
+```powershell
+git clone --no-local --branch feature/l5-04-docker . $cleanDir
+git -C $cleanDir status --porcelain
+docker buildx build --platform linux/amd64 --no-cache --load -t borrowbase-l5-04-clean:verify $cleanDir
+```
+
+**Results:**
+
+- Clean checkout: PASS — no uncommitted changes
+- No-cache build: PASS — 27/27 build steps completed
+- Image platform: `linux/amd64`
+- Configured runtime user: `node`
+- Image tag: `borrowbase-l5-04-clean:verify`
+- Build completed without using locally untracked application files
+
+### Runtime Dependency Hardening
+
+The final runtime image was inspected using:
+
+```powershell
+docker run --rm --entrypoint node borrowbase-l5-04-clean:verify -e "const fs=require('fs'); for(const p of ['prisma','@prisma/config','deepmerge-ts']) console.log(p,fs.existsSync('/app/node_modules/'+p))"
+```
+
+**Results:**
+
+| Package directory | Present in runtime image |
+|---|---|
+| `prisma` | No |
+| `@prisma/config` | No |
+| `deepmerge-ts` | No |
+
+The generated Prisma Client and required application runtime dependencies were retained. The separate maintenance image remains responsible for migrations and seeding.
+
+### Application and Database Verification
+
+The hardened application image was rebuilt and deployed locally using Docker Compose.
+
+| Verification | Result |
+|---|---|
+| React frontend | HTTP 200 |
+| Database readiness | HTTP 200 |
+| Unknown API endpoint | JSON HTTP 404 |
+| Non-root runtime user | UID 1000 |
+| PostgreSQL named volume | Verified |
+| Application container restart | Persistence PASS |
+| PostgreSQL container restart | Persistence PASS |
+| Database readiness recovery | PASS |
+
+The synthetic equipment record `BB-LAP-001` retained the same ID before and after application and PostgreSQL restarts:
+
+`fb8deab2-58c2-493a-a65b-070a17a00a11`
+
+Immediately after restarting PostgreSQL, one readiness request returned HTTP 503. Without manually restarting the application, five consecutive subsequent requests returned HTTP 200 with `{"status":"ready"}`.
+
+Both application and PostgreSQL containers subsequently reported healthy status.
+
+### Security and Limitations
+
+- The local Compose setup is loopback-only and uses HTTP development configuration.
+- Production HTTPS Origin validation and Secure-cookie behavior were not disabled.
+- The npm dependency graph still reports three high-severity findings associated with the Prisma CLI/config dependency chain.
+- The targeted packages were absent from the verified runtime image, but no comprehensive final-image vulnerability scan was performed.
+- Full authenticated borrow/checkout workflow testing and production HTTPS authentication remain outside this local Docker verification.
+- No existing PostgreSQL volume or other project resources were deleted.
+
+**Final result:** L5-04 local Docker packaging, clean-checkout build, application/database integration, and restart persistence verification passed.
