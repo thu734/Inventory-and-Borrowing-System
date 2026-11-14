@@ -26,22 +26,45 @@ run_cmd() {
   done
   printf '\n' >&2
   if [[ "$DRY_RUN" == 0 ]]; then
-    "$@" >/dev/null 2>/dev/null || fail 'Operation failed; stop and inspect sanitized diagnostics before retrying.'
+    if ! "$@" >/dev/null 2>/dev/null; then
+      # Fixed diagnostic locations, never raw cloud stderr or secret-bearing args.
+      printf '%s\n' 'Operation failed; inspect the preceding redacted command. Do not retry blindly.' >&2
+      case "$1 ${2:-} ${3:-}" in
+        'gcloud builds submit')
+          printf 'Inspect Cloud Build: https://console.cloud.google.com/cloud-build/builds?project=%s\n' "$PROJECT_ID" >&2 ;;
+        'gcloud run jobs')
+          printf 'Inspect Cloud Run job execution and logs in project %s, region %s.\n' "$PROJECT_ID" "$REGION" >&2
+          printf 'List executions: gcloud run jobs executions list --job=%q --region=%q --project=%q\n' "${5:-}" "$REGION" "$PROJECT_ID" >&2 ;;
+        *)
+          printf 'Inspect the matching resource operation in Google Cloud Console for project %s.\n' "$PROJECT_ID" >&2 ;;
+      esac
+      fail 'Stop and resolve the failure before retrying; credentials and raw cloud errors are not printed.'
+    fi
   fi
 }
 
 read_cloud() {
-  gcloud "$@" --project="$PROJECT_ID" 2>/dev/null || fail 'Cloud lookup failed; no values or raw errors are logged.'
+  gcloud "$@" --project="$PROJECT_ID" 2>/dev/null || fail 'Required cloud read failed; inspect the selected resource in Console and verify account permissions, API enablement and connectivity. No values or raw errors are logged.'
 }
 
 # Distinguish absence from permission/network/API errors; never recreate blindly.
 exists() {
   local detail
   if detail=$(gcloud "$@" --project="$PROJECT_ID" 2>&1); then return 0; fi
+  # The Kit's check-then-create flow is retained, but only an explicit missing
+  # resource may trigger creation. SQL uses HTTPError rather than NOT_FOUND.
+  # Denials can say "does not exist or you do not have permission"; never treat
+  # that wording (or an embedded NOT_FOUND in an unrelated error) as absence.
   case "$detail" in
-    *NOT_FOUND*|*'does not exist'*) return 1 ;;
-    *) fail 'Resource lookup failed; stop rather than assuming the resource is absent.' ;;
+    *PERMISSION_DENIED*|*UNAUTHENTICATED*|*'HTTPError 401:'*|*'HTTPError 403:'*|*'do not have permission'*)
+      fail 'Resource lookup failed; check the active account, project, enabled APIs, permissions and connectivity in Console. Do not assume the resource is absent.' ;;
   esac
+  local prefix='(ERROR: \(gcloud\.[[:alnum:]_.-]+\) )?'
+  if [[ "$detail" =~ ^${prefix}(HTTPError\ 404:\ Not\ Found\.?|NOT_FOUND(:[[:space:]].*)?)$ ]] ||
+     [[ "$detail" =~ ^${prefix}The\ resource\ \'[^\']+\'\ does\ not\ exist\.?$ ]]; then
+    return 1
+  fi
+  fail 'Resource lookup failed; check the active account, project, enabled APIs, permissions and connectivity in Console. Do not assume the resource is absent.'
 }
 
 validate_release() {
@@ -153,7 +176,51 @@ deploy_service() {
 
 verify_service() { python3 "$SCRIPT_DIR/smoke_test.py" "$SERVICE_URL"; }
 
+# Adapted from the Starter Kit's completion section; never include credentials.
+print_completion_summary() {
+  local bootstrap_completed=$1 heading origin sha application maintenance revision bootstrap_status
+  if [[ "$DRY_RUN" == 1 ]]; then
+    heading='Deployment Completed! (DRY RUN — SIMULATION)'
+    origin='https://<assigned-cloud-run-service-url>'
+    sha='<source-sha>'
+    application='<application-image@sha256:digest>'
+    maintenance='<maintenance-image@sha256:digest>'
+    revision='<ready-cloud-run-revision>'
+    bootstrap_status='NOT EXECUTED — simulation only; no accounts bootstrapped'
+  else
+    heading='Deployment Completed!'
+    origin="$SERVICE_URL"
+    sha="$RELEASE_SHA"
+    application="$APP_DIGEST"
+    maintenance="$MAINTENANCE_DIGEST"
+    revision="$REVISION"
+    if [[ "$bootstrap_completed" == true ]]; then
+      bootstrap_status='Completed successfully in this deployment'
+    else
+      bootstrap_status='Not executed in this deployment'
+    fi
+  fi
+  printf '\n%s\n' '=================================================================='
+  printf '%s\n' "$heading"
+  printf '%s\n' '=================================================================='
+  printf 'Service URL                 : %s\n' "$origin"
+  printf 'Health Check URL            : %s/api/health\n' "$origin"
+  printf 'Readiness Check URL         : %s/api/ready\n' "$origin"
+  printf 'Source SHA                  : %s\n' "$sha"
+  printf 'Application image digest    : %s\n' "$application"
+  printf 'Maintenance image digest    : %s\n' "$maintenance"
+  printf 'Ready Cloud Run revision    : %s\n' "$revision"
+  printf 'Synthetic-account bootstrap : %s\n' "$bootstrap_status"
+  if [[ "$DRY_RUN" == 1 ]]; then
+    printf '%s\n' 'No cloud resources were created by the dry-run logic.'
+  fi
+  printf '%s\n' 'Check URLs are references, not passing-check results.'
+  printf '%s\n' 'Health checks server liveness; readiness checks database connectivity.'
+  printf '%s\n' '=================================================================='
+}
+
 main() {
+  local bootstrap_completed=false
   for arg in "$@"; do
     case "$arg" in
       --bootstrap-demo) BOOTSTRAP=true ;;
@@ -224,6 +291,7 @@ sys.exit(0 if ok else 1)' "$REGION" || fail 'Existing SQL instance differs from 
     grant_secret "$SECRET_BORROWER" "$MAINTENANCE_EMAIL"
     grant_secret "$SECRET_CUSTODIAN" "$MAINTENANCE_EMAIL"
     job create "$BOOTSTRAP_JOB_NAME" db:seed "DATABASE_URL=$SECRET_DB_URL:$DB_VERSION,SEED_BORROWER_PASSWORD=$SECRET_BORROWER:$BORROWER_VERSION,SEED_CUSTODIAN_PASSWORD=$SECRET_CUSTODIAN:$CUSTODIAN_VERSION"
+    if [[ "$DRY_RUN" == 0 ]]; then bootstrap_completed=true; fi
   fi
 
   # New service: obtain its assigned URL behind Cloud Run IAM first. The temporary
@@ -249,7 +317,7 @@ sys.exit(0 if ok else 1)' "$REGION" || fail 'Existing SQL instance differs from 
     [[ "$running_image" == "$APP_DIGEST" ]] || fail 'Ready revision image differs from the reviewed application digest.'
   fi
   if [[ "$DRY_RUN" == 0 ]]; then verify_service; fi
-  printf 'Source SHA: %s\nApplication image: %s\nMaintenance image: %s\nService origin: %s\nReady revision: %s\n' "$RELEASE_SHA" "$APP_DIGEST" "$MAINTENANCE_DIGEST" "$SERVICE_URL" "$REVISION"
+  print_completion_summary "$bootstrap_completed"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
