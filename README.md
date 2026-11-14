@@ -204,6 +204,8 @@ This tree shows the current implementation only; planned architecture is not pre
 - [Requirements traceability](docs/traceability.md)
 - [F-01 authentication contract and verification evidence](docs/sprints/sprint-1/contracts/F-01-authentication.md)
 - [SYS-01 database setup and integrity documentation](docs/sys01-database.md)
+- [Lab 5 implementation plan](docs/labs/lab-05/implementation-plan.md)
+- [Lab 5 deployment document](docs/labs/lab-05/deployment.md)
 
 ## Limitations
 
