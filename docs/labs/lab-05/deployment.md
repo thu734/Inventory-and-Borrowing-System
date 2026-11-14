@@ -1,8 +1,8 @@
 # BorrowBase Lab 5 deployment draft
 
-Status: **planned, not deployed or verified**. Updated 14 November 2026. Execution gates and issue backlog are in [implementation plan](implementation-plan.md). The official handout, Student Guide, starter kit, Group Work Specification and Deliverable 1 were reconciled for this draft.
+Status: **Docker implementation available; cloud deployment remains planned**. Updated 14 November 2026. Execution gates and issue backlog are in [implementation plan](implementation-plan.md). The official handout, Student Guide, starter kit, Group Work Specification and Deliverable 1 were reconciled for this draft.
 
-No cloud resource, deployment, Docker build or CI run is asserted to exist by this document. `lab5-staging` is the Lab 5 integration branch and `main` is the release branch.
+No cloud resource, deployment or CI run is asserted to exist by this document. The L5-04 local Docker procedure and C-03 evidence are maintained in [docker.md](docker.md). `lab5-staging` is the Lab 5 integration branch and `main` is the release branch.
 
 ## Architecture and resource inventory
 
@@ -38,33 +38,23 @@ Prefer managed Cloud SQL connection through an approved supported connector/sock
 
 Root environment examples serve CLI/seed; backend examples serve development. Existing example DB names differ: align local URLs explicitly. Never commit env files, service account JSON keys, credentials, tokens, cookies, full secret-bearing URLs or unredacted console output. Frontend Vite variables are public; no secrets there. Keep same-origin relative `/api/v1` requests; no permissive CORS workaround. A public demo still requires Borrower/Custodian application authentication; share grading credentials using the approved private channel after lecturer requirements are known.
 
-## Episode 2 production procedure to implement and verify
+## Existing production runtime contract
 
-Proposed build from repository root: `npm ci`, `npm run db:generate`, `npm run build`. Proposed compiled start: `node backend/dist/server.js`; production script and static serving are currently absent. Runtime must include generated Prisma client/native engine, Argon2-compatible dependencies, backend output and frontend output. It must work without Vite development server and without development env files.
+The Docker build installs from the shared workspace lockfile, generates Prisma Client, builds backend and frontend, and runs `node backend/dist/server.js` with the production dependencies and built static assets. Local build/run and C-03 evidence are tracked in [docker.md](docker.md).
 
-Mount real API routes first, built frontend next and guarded browser SPA fallback before final error handler. Unknown API URLs must remain safe JSON 404; missing static files must not become HTML responses. Keep production static path independent of shell working directory. Express 5 fallback syntax must be tested.
+The existing server mounts real API routes before the built frontend and guarded browser SPA fallback. Production-runtime tests cover static delivery and JSON 404 behavior for unknown APIs and missing assets. The static path is resolved from the server module, not the process working directory.
 
-Required probe: `/api/ready` must return success when PostgreSQL is reachable and HTTP 503 when it is not, without exposing SQL errors or secrets. It does not exist yet and is an Episode 2 deployment blocker. Existing startup connects DB before listening, handles SIGTERM/SIGINT and disconnects after server close; verify bounded shutdown and connection cleanup in future tests. Avoid unnecessary proxy trust; assess IP-based limiter behavior behind Cloud Run before any change.
+Required probe: `/api/ready` returns success when PostgreSQL is reachable and HTTP 503 when it is not, without exposing SQL errors or secrets. Existing startup connects DB before listening, handles SIGTERM/SIGINT and disconnects after server close. Avoid unnecessary proxy trust; assess IP-based limiter behavior behind Cloud Run before any change.
 
 Production security verification must show Secure, HttpOnly, SameSite=Lax cookies under actual HTTPS, exact Origin acceptance, bad Origin/CSRF rejection, Borrower/Custodian role boundaries and no sensitive response/log leakage. Local HTTP results cannot establish deployed cookie behavior. Session records and CSRF secret must persist across revisions; login limiter remains process-local and is not distributed protection.
 
-## Docker and local PostgreSQL procedure — planned, not executed
+## Docker and local PostgreSQL
 
-Expected files: root Dockerfile, .dockerignore and compose.yaml, subject to starter conventions. Use workspace-root build context, lockfile install, matching Linux build/runtime base and Prisma generation before packaging. Exclude env/git/test secrets and unnecessary artifacts. Prefer a multi-stage Debian-based Node image to simplify native compatibility; pin a reviewed version within current engine range. Do not copy host node_modules into Linux image.
-
-Later workflow:
-
-1. Inspect rendered compose config without exposing substituted secrets (`docker compose config --quiet`). Build images with `docker compose build`.
-2. Start dedicated local DB with named volume and readiness; inject local synthetic configuration. Actual service names/commands must be filled after compose exists.
-3. On that explicitly identified disposable development database, run committed migration deploy and deliberate initial synthetic seed. Never use cloud/shared DB for tests.
-4. Start app, exercise login/catalog/request/checkout/active Loan and rejection cases; record SHA/image/platform and actual outputs.
-5. Restart app, then DB with volume retained; verify same record IDs and eligible session. `docker compose down -v` is excluded from normal procedure.
-
-No Docker/local-DB result is verified yet. Database test jobs require different guarded DB names; see [plan §7](implementation-plan.md#7-episode-2-actionable-checklist).
+The local application and isolated PostgreSQL Compose workflow, explicit migration/seed commands, HTTP-vs-HTTPS limitations and C-03 evidence are documented in [docker.md](docker.md). It is separate from cloud deployment and must not be used to infer production HTTPS-cookie behavior. Database test jobs require different guarded DB names; see [plan §7](implementation-plan.md#7-episode-2-actionable-checklist).
 
 ## Migrations and seed policy
 
-Committed Prisma migrations are the authority. `npm run db:migrate` currently invokes `prisma migrate deploy`; no production `migrate dev`, reset or schema push. Generate client at build time. Choose a controlled migration runner with DB connectivity (proposed dedicated Cloud Run job from the same image, pending guide/cost review). Run migration once before updating service traffic; stop release on failure. No per-instance startup migrations.
+Committed Prisma migrations are the authority. `npm run db:migrate` invokes `prisma migrate deploy`; no production `migrate dev`, reset or schema push. Generate client at build time. Local Docker exposes a separate opt-in maintenance image for one-off migrations. Cloud still needs a controlled migration runner with DB connectivity (proposed dedicated Cloud Run job, pending guide/cost review). Run migration once before updating service traffic; stop release on failure. No per-instance startup migrations.
 
 Bootstrap synthetic accounts/equipment once with authorized secret inputs and recorded result; do not routinely rerun seed, which rewrites passwords and equipment serviceability. No production seed in Docker build/CD startup. Do not add schema changes merely to deploy. If a later migration is necessary, review backward compatibility and backup/recovery before release; traffic rollback cannot undo schema changes.
 
