@@ -58,9 +58,13 @@ Committed Prisma migrations are the authority. `npm run db:migrate` invokes `pri
 
 Bootstrap synthetic accounts/equipment once with authorized secret inputs and recorded result; do not routinely rerun seed, which rewrites passwords and equipment serviceability. No production seed in Docker build/CD startup. Do not add schema changes merely to deploy. If a later migration is necessary, review backward compatibility and backup/recovery before release; traffic rollback cannot undo schema changes.
 
-## CI, release and identity — planned
+## CI, release and identity
 
-PRs from small branches target lab5-staging; reviewed release PR targets main. Teammate approval and stable CI gates must precede merge. CI should reproducibly install/generate/typecheck/build, build the Docker image, and run explicit unit, all API, UI and guarded PostgreSQL suites. Root test:api currently runs authentication only; blanket npm test cannot satisfy incompatible database guards.
+PR CI is implemented in [`.github/workflows/pr-ci.yml`](../../../.github/workflows/pr-ci.yml). It runs on pull requests targeting `lab5-staging` and `main`, with stable checks named `Typecheck and build`, `Unit, API and UI tests`, `PostgreSQL integration tests`, and `Docker build`. The workflow reproducibly installs from the npm workspace lockfile, generates Prisma Client, runs the checks, and builds (but does not publish or deploy) the production image for `linux/amd64`. PostgreSQL integration tests use four separate guarded databases; only F-01 is seeded. See the [C-01 record](implementation-plan.md) for the database mapping and current evidence status.
+
+The workflow has not yet run on GitHub; successful PR evidence, a tested hosted SHA/run URL and deliberate failing-PR evidence remain pending. The Actions summary and job logs will record these once a PR run occurs. No repository rules or branch protection settings were changed.
+
+Recommended required checks for both `lab5-staging` and `main`: the four stable check names above. Configure the rules only after confirming the actual check names from the first Actions run. PR CI has only `contents: read` token permission and receives no cloud auth or production secrets. Root `test:api` alone currently runs only authentication; the CI backend test command excludes the separately guarded PostgreSQL suites, which have their own job and explicit database setup. Blanket `npm test` is not used.
 
 WIF trust must restrict repository and permitted main deployment context; no long-lived JSON keys. Fork/feature PR CI must not receive cloud credentials. Keep runtime access limited to its required secrets/SQL; deployer receives only necessary registry, rollout and controlled migration permissions, not general owner privileges.
 
