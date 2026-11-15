@@ -146,6 +146,32 @@ print_completion_summary true
                                   'SEED_DEMO_DATA', 'borrower@example.test', 'custodian@example.test']:
                     self.assertNotIn(forbidden, summary)
 
+    def test_authenticated_http_404_allows_database_creation(self):
+        state = {
+            "calls": [],
+            "secrets": {},
+            "scenario": "fresh",
+            "artifact": True,
+            "sql": True,
+            "missing_error": (
+                "HTTPError 404: Not Found. "
+                "This command is authenticated as mock@example.test "
+                "which is the active account specified by the "
+                "[core/account] property"
+            ),
+        }
+
+        result, state = self.run_stub(state=state)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(
+            any(
+                call[:3] == ["sql", "databases", "create"]
+                for call in state["calls"]
+            )
+        )
+
+
     def test_no_completion_summary_after_any_deployment_failure(self):
         for scenario in ['permission', 'build-failure', 'migration-failure', 'bootstrap-failure', 'service-failure', 'smoke-failure']:
             with self.subTest(scenario=scenario):
