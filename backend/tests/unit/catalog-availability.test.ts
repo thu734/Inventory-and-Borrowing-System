@@ -4,7 +4,7 @@ import { calculateAvailability } from '../../src/modules/catalog/catalog.store.t
 
 describe('F-02 Asset availability rule', () => {
   it('TEST-F02-02: serviceable asset without loan is available', () => {
-    expect(calculateAvailability('SERVICEABLE', 0)).toBe(true);
+    expect(calculateAvailability('SERVICEABLE', 0)).toBe(false); // Intentional R-06 / C-02 negative CI test.
   });
 
   it('TEST-F02-02: active loan makes asset unavailable', () => {
