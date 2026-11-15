@@ -1,3 +1,4 @@
+
 name: BorrowBase PR CI
 
 on:
@@ -5,12 +6,13 @@ on:
     branches:
       - lab5-staging
       - main
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: borrowbase-pr-${{ github.event.pull_request.number }}
+  group: borrowbase-ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -46,6 +48,7 @@ jobs:
         run: |
           bash -n deploy/config.sh
           bash -n deploy/deploy.sh
+          bash -n deploy/release.sh
           python3 -B -m unittest discover -s deploy/tests -p 'test_*.py' -v
 
   unit-api-ui:
@@ -77,11 +80,13 @@ jobs:
   postgres-integration:
     name: PostgreSQL integration tests
     runs-on: ubuntu-latest
+
     env:
       CI_PG_USER: borrowbase_ci
       CI_PG_PASSWORD: ci-borrowbase-${{ github.run_id }}-${{ github.run_attempt }}
       PGUSER: borrowbase_ci
       PGPASSWORD: ci-borrowbase-${{ github.run_id }}-${{ github.run_attempt }}
+
     services:
       postgres:
         image: postgres:16@sha256:63e83b5a3dc36a917dccb76fe1bd2ac51f1ec9c1deb47ff20d4f04233bf6eae9
@@ -96,6 +101,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -186,19 +192,23 @@ jobs:
   ci-evidence:
     name: CI evidence summary
     if: ${{ always() }}
+
     needs:
       - typecheck-build
       - unit-api-ui
       - postgres-integration
       - docker-build
+
     runs-on: ubuntu-latest
     permissions: {}
+
     env:
       BUILD_RESULT: ${{ needs.typecheck-build.result }}
       UNIT_API_UI_RESULT: ${{ needs.unit-api-ui.result }}
       POSTGRES_RESULT: ${{ needs.postgres-integration.result }}
       DOCKER_RESULT: ${{ needs.docker-build.result }}
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
     steps:
       - name: Record tested revisions and check outcomes
         run: |
@@ -206,7 +216,7 @@ jobs:
             echo "## BorrowBase PR CI evidence"
             echo
             echo "- Tested merge SHA: \`$GITHUB_SHA\`"
-            echo "- PR head SHA: \`$PR_HEAD_SHA\`"
+            echo "- Source commit SHA: \`$PR_HEAD_SHA\`"
             echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo
             echo "| Stable check | Result |"
@@ -218,3 +228,14 @@ jobs:
             echo
             echo "Vitest counts, assertion failures, migration output, and Docker build logs are retained in the corresponding job logs."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce required CI results
+        shell: bash
+        run: |
+          for result in "$BUILD_RESULT" "$UNIT_API_UI_RESULT" "$POSTGRES_RESULT" "$DOCKER_RESULT"; do
+            if [[ "$result" != "success" ]]; then
+              echo "::error::A required CI check did not succeed: $result"
+              exit 1
+            fi
+          done
+          echo "All required CI checks passed."
