@@ -101,7 +101,63 @@ resolve_digest() {
 
   printf '%s' "$digest"
 }
+revision_image_matches() {
+  local expected="$1"
+  local actual="$2"
 
+  if [[ "$expected" == "$actual" ]]; then
+    return 0
+  fi
+
+  [[ "$expected" =~ ^([^@]+)@sha256:([0-9a-f]{64})$ ]] || return 1
+
+  local repository="${BASH_REMATCH[1]}"
+  local parent_digest="${BASH_REMATCH[2]}"
+
+  [[ "${actual%@*}" == "$repository" ]] || return 1
+  [[ "${actual##*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+
+  local token manifest
+
+  token="$(gcloud auth print-access-token 2>/dev/null)" || return 1
+  [[ -n "$token" ]] || return 1
+
+  manifest="$(curl --fail --silent --show-error \
+    --connect-timeout 10 --max-time 30 \
+    -H "Authorization: Bearer $token" \
+    -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+    "https://${repository%%/*}/v2/${repository#*/}/manifests/sha256:${parent_digest}" \
+    2>/dev/null)" || return 1
+
+  printf '%s' "$manifest" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+    expected_child = sys.argv[1]
+
+    accepted = {
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json"
+    }
+
+    if data.get("mediaType") not in accepted:
+        sys.exit(1)
+
+    matches = [
+        item for item in data.get("manifests", [])
+        if item.get("digest") == expected_child
+        and item.get("platform", {}).get("os") == "linux"
+        and item.get("platform", {}).get("architecture") == "amd64"
+    ]
+
+    sys.exit(0 if len(matches) == 1 else 1)
+
+except (ValueError, TypeError, KeyError):
+    sys.exit(1)
+' "${actual##*@}" >/dev/null 2>&1
+}
 PHASE="preflight"
 
 gcloud run services describe "$SERVICE_NAME" \
@@ -155,7 +211,7 @@ if [[ "$MODE" == release ]]; then
   TARGET_REVISION=$(gcloud run services describe "$SERVICE_NAME" \
     --region="$REGION" \
     --project="$PROJECT_ID" \
-    --format='value(status.latestReadyRevisionName)' \
+    --format='value(status.latestCreatedRevisionName)'
     2>/dev/null) \
     || fail "Cannot read ready revision"
 
@@ -184,7 +240,7 @@ else
       2>/dev/null) \
       || fail "Cannot inspect existing revision"
 
-    if [[ "$candidate_image" == "$APP_DIGEST" ]]; then
+    if revision_image_matches "$APP_DIGEST" "$candidate_image"; then
       TARGET_REVISION="$candidate"
       break
     fi
@@ -206,9 +262,36 @@ VERIFIED_IMAGE=$(gcloud run revisions describe "$TARGET_REVISION" \
   2>/dev/null) \
   || fail "Cannot verify selected revision"
 
-[[ "$VERIFIED_IMAGE" == "$APP_DIGEST" ]] \
+revision_image_matches "$APP_DIGEST" "$VERIFIED_IMAGE" \
   || fail "Selected revision image digest mismatch"
+PHASE="revision-readiness"
 
+REVISION_JSON=$(gcloud run revisions describe "$TARGET_REVISION" \
+  --region="$REGION" \
+  --project="$PROJECT_ID" \
+  --format=json \
+  2>/dev/null) \
+  || fail "Cannot inspect selected revision readiness"
+
+printf '%s' "$REVISION_JSON" | python3 -c '
+import json
+import sys
+
+try:
+    revision = json.load(sys.stdin)
+    conditions = revision.get("status", {}).get("conditions", [])
+
+    ready = any(
+        condition.get("type") == "Ready"
+        and str(condition.get("status")).lower() == "true"
+        for condition in conditions
+    )
+
+    sys.exit(0 if ready else 1)
+
+except (ValueError, TypeError, KeyError):
+    sys.exit(1)
+' || fail "Selected revision is not ready"
 PHASE="traffic-switch"
 
 gcloud run services update-traffic "$SERVICE_NAME" \
