@@ -48,24 +48,31 @@ read_cloud() {
 }
 
 # Distinguish absence from permission/network/API errors; never recreate blindly.
+
 exists() {
   local detail
-  if detail=$(gcloud "$@" --project="$PROJECT_ID" 2>&1); then return 0; fi
-  # The Kit's check-then-create flow is retained, but only an explicit missing
-  # resource may trigger creation. SQL uses HTTPError rather than NOT_FOUND.
-  # Denials can say "does not exist or you do not have permission"; never treat
-  # that wording (or an embedded NOT_FOUND in an unrelated error) as absence.
+  if detail=$(gcloud "$@" --project="$PROJECT_ID" 2>&1); then
+    return 0
+  fi
+
   case "$detail" in
     *PERMISSION_DENIED*|*UNAUTHENTICATED*|*'HTTPError 401:'*|*'HTTPError 403:'*|*'do not have permission'*)
-      fail 'Resource lookup failed; check the active account, project, enabled APIs, permissions and connectivity in Console. Do not assume the resource is absent.' ;;
+      fail 'Resource lookup failed; check the active account, project, enabled APIs, permissions and connectivity in Console. Do not assume the resource is absent.'
+      ;;
   esac
+
+  detail="${detail%% This command is authenticated as*}"
+
   local prefix='(ERROR: \(gcloud\.[[:alnum:]_.-]+\) )?'
+
   if [[ "$detail" =~ ^${prefix}(HTTPError\ 404:\ Not\ Found\.?|NOT_FOUND(:[[:space:]].*)?)$ ]] ||
      [[ "$detail" =~ ^${prefix}The\ resource\ \'[^\']+\'\ does\ not\ exist\.?$ ]]; then
     return 1
   fi
+
   fail 'Resource lookup failed; check the active account, project, enabled APIs, permissions and connectivity in Console. Do not assume the resource is absent.'
 }
+
 
 validate_release() {
   RELEASE_SHA=$(git -C "$ROOT" rev-parse HEAD)
@@ -165,16 +172,30 @@ job() {
   run_cmd gcloud run jobs execute "$name" --region="$REGION" --wait --project="$PROJECT_ID"
 }
 
+
 deploy_service() {
   local access=$1 origin=$2
-  run_cmd gcloud run deploy "$SERVICE_NAME" --image="$APP_DIGEST" --region="$REGION" \
-    --service-account="$SA_EMAIL" --set-cloudsql-instances="$SQL_CONN_NAME" \
+
+  run_cmd gcloud run deploy "$SERVICE_NAME" \
+    --image="$APP_DIGEST" \
+    --region="$REGION" \
+    --service-account="$SA_EMAIL" \
+    --set-cloudsql-instances="$SQL_CONN_NAME" \
     --set-secrets="DATABASE_URL=$SECRET_DB_URL:$DB_VERSION,CSRF_SECRET=$SECRET_CSRF:$CSRF_VERSION" \
-    --set-env-vars="NODE_ENV=production,APP_ORIGIN=$origin" --port=3000 --cpu=1 --memory=512Mi \
-    --min-instances=0 --max-instances=1 --concurrency=20 "$access" --project="$PROJECT_ID"
+    --set-env-vars="NODE_ENV=production,APP_ORIGIN=$origin" \
+    --port=3000 \
+    --cpu=1 \
+    --memory=512Mi \
+    --min-instances=0 \
+    --max-instances=1 \
+    --concurrency=20 \
+    "$access" \
+    --project="$PROJECT_ID"
 }
 
-verify_service() { python3 "$SCRIPT_DIR/smoke_test.py" "$SERVICE_URL"; }
+verify_service() {
+  python3 "$SCRIPT_DIR/smoke_test.py" "$SERVICE_URL"
+}
 
 # Adapted from the Starter Kit's completion section; never include credentials.
 print_completion_summary() {
