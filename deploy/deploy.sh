@@ -66,7 +66,8 @@ exists() {
   local prefix='(ERROR: \(gcloud\.[[:alnum:]_.-]+\) )?'
 
   if [[ "$detail" =~ ^${prefix}(HTTPError\ 404:\ Not\ Found\.?|NOT_FOUND(:[[:space:]].*)?)$ ]] ||
-     [[ "$detail" =~ ^${prefix}The\ resource\ \'[^\']+\'\ does\ not\ exist\.?$ ]]; then
+     [[ "$detail" =~ ^${prefix}The\ resource\ \'[^\']+\'\ does\ not\ exist\.?$ ]] ||
+     [[ "$detail" == "ERROR: (gcloud.run.services.describe) Cannot find service [$SERVICE_NAME]" ]]; then
     return 1
   fi
 
