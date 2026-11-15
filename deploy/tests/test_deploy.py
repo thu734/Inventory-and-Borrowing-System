@@ -283,6 +283,64 @@ if exists sql databases describe borrowbase; then exit 0; else exit $?; fi
                     capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, status, result.stderr)
 
+    def classify_cloud_run_lookup(self, error, lookup=('run', 'services', 'describe', 'borrowbase')):
+        code = '''source "$DEPLOY_SCRIPT"
+gcloud() { printf '%s' "$LOOKUP_ERROR" >&2; return 1; }
+fail() { exit 99; }
+if exists "$@"; then exit 0; else exit $?; fi
+'''
+        return subprocess.run(
+            ['bash', '-c', code, 'lookup', *lookup],
+            env={**os.environ, 'DEPLOY_SCRIPT': str(SCRIPT), 'LOOKUP_ERROR': error},
+            capture_output=True, text=True, timeout=5,
+        )
+
+    def test_cloud_run_missing_service_is_absent(self):
+        result = self.classify_cloud_run_lookup(
+            'ERROR: (gcloud.run.services.describe) Cannot find service [borrowbase]'
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+
+    def test_cloud_run_lookup_errors_stop(self):
+        for error in [
+            'ERROR: (gcloud.run.services.describe) PERMISSION_DENIED: denied',
+            'ERROR: (gcloud.run.services.describe) UNAUTHENTICATED: login required',
+            'ERROR: (gcloud.run.services.describe) Cannot find service [borrowbase] or you do not have permission',
+            'ERROR: (gcloud.run.services.describe) Cannot find service [borrowbase] PERMISSION_DENIED',
+            'ERROR: (gcloud.run.services.describe) Cannot find service [borrowbase] unexpected response',
+        ]:
+            with self.subTest(error=error):
+                result = self.classify_cloud_run_lookup(error)
+                self.assertEqual(result.returncode, 99, result.stderr)
+
+    def test_cloud_run_missing_job_is_absent(self):
+        for name in ['borrowbase-bootstrap', 'borrowbase-migrate']:
+            with self.subTest(name=name):
+                result = self.classify_cloud_run_lookup(
+                    f'ERROR: (gcloud.run.jobs.describe) Cannot find job [{name}].',
+                    ('run', 'jobs', 'describe', name),
+                )
+                self.assertEqual(result.returncode, 1, result.stderr)
+
+    def test_cloud_run_missing_job_requires_exact_lookup_and_response(self):
+        missing = 'ERROR: (gcloud.run.jobs.describe) Cannot find job [borrowbase-bootstrap].'
+        lookup = ('run', 'jobs', 'describe', 'borrowbase-bootstrap')
+        cases = [
+            (missing, ('run', 'jobs', 'describe', 'borrowbase-migrate')),
+            (missing, ('run', 'services', 'describe', 'borrowbase-bootstrap')),
+            (missing, ('run', 'jobs', 'list', 'borrowbase-bootstrap')),
+            ('ERROR: (gcloud.run.jobs.describe) PERMISSION_DENIED: denied', lookup),
+            ('ERROR: (gcloud.run.jobs.describe) UNAUTHENTICATED: login required', lookup),
+            ('ConnectionError: connection reset', lookup),
+            (missing + ' or you do not have permission', lookup),
+            (missing + ' PERMISSION_DENIED', lookup),
+            (missing + ' unexpected response', lookup),
+        ]
+        for error, args in cases:
+            with self.subTest(error=error, lookup=args):
+                result = self.classify_cloud_run_lookup(error, args)
+                self.assertEqual(result.returncode, 99, result.stderr)
+
     def test_default_is_migration_only_with_two_digest_pinned_images(self):
         result, state = self.run_stub()
         self.assertEqual(result.returncode, 0, result.stderr)
