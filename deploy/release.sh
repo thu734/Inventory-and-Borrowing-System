@@ -251,11 +251,11 @@ SERVICE_URL=$(gcloud run services describe "$SERVICE_NAME" \
 [[ "$SERVICE_URL" == https://*.run.app ]] \
   || fail "Invalid service URL"
 
-echo "Release successful"
+echo "Deployment verified; smoke test pending"
 echo "Mode: $MODE"
 echo "SHA: $RELEASE_SHA"
 echo "Digest: $APP_DIGEST"
 echo "Revision: $TARGET_REVISION"
 echo "URL: $SERVICE_URL"
 
-write_summary "SUCCESS" "Verified revision serving 100 percent of traffic"
+write_summary "DEPLOYED" "Verified revision serving 100 percent of traffic; smoke test pending"

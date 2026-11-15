@@ -146,6 +146,7 @@ jobs:
           bash deploy/release.sh "$RELEASE_MODE" "$RELEASE_SHA"
 
       - name: Smoke test public URL
+        id: smoke
         shell: bash
         run: |
           set -euo pipefail
@@ -162,14 +163,30 @@ jobs:
         shell: bash
         env:
           JOB_RESULT: ${{ job.status }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
+          set -euo pipefail
+          case "$SMOKE_OUTCOME" in
+            success) SMOKE_RESULT=PASS ;;
+            failure) SMOKE_RESULT=FAIL ;;
+            *) SMOKE_RESULT="NOT RUN" ;;
+          esac
+          FINAL_STATUS=FAILED
+          if [[ "$JOB_RESULT" == success && "$SMOKE_OUTCOME" == success ]]; then
+            FINAL_STATUS=SUCCESS
+          fi
+
           {
             echo
             echo "## GitHub Actions result"
             echo
             echo "- Workflow result: $JOB_RESULT"
+            echo "- Final release status: $FINAL_STATUS"
+            echo "- Smoke test: $SMOKE_RESULT"
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo "- Requested mode: ${RELEASE_MODE:-not validated}"
             echo "- Requested SHA: ${RELEASE_SHA:-not validated}"
             echo "- No service-account JSON key was used"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          [[ "$FINAL_STATUS" == SUCCESS ]]

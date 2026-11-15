@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -328,6 +329,106 @@ class ReleaseTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0)
         self.assertIn("No cloud operations", result.stdout)
+
+    def finish_workflow(self, mode, failure="", smoke_exit=0):
+        # Execute the workflow's actual shell blocks; replace only the HTTP smoke
+        # command. gcloud remains the same offline fixture used by release.sh.
+        (self.directory / "summary.md").write_text("")
+        workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+
+        def run_block(name):
+            step = workflow.split("      - name: " + name + "\n", 1)[1]
+            step = step.split("\n      - name:", 1)[0]
+            return textwrap.dedent(step.split("        run: |\n", 1)[1])
+
+        deployment = self.execute(mode, failure=failure)
+        env = {
+            **os.environ,
+            "PATH": str(self.bin_dir) + os.pathsep + os.environ["PATH"],
+            "PROJECT_ID": "cpe334-borrowbase",
+            "REGION": "asia-southeast1",
+            "MOCK_LOG": str(self.log),
+            "MOCK_STATE": str(self.state),
+            "MOCK_FAILURE": "",
+            "GITHUB_STEP_SUMMARY": str(self.directory / "summary.md"),
+            "GITHUB_SERVER_URL": "https://github.com",
+            "GITHUB_REPOSITORY": "thu734/Inventory-and-Borrowing-System",
+            "GITHUB_RUN_ID": "offline-test",
+            "RELEASE_MODE": mode,
+            "RELEASE_SHA": SHA_B,
+            "TEST_SMOKE_EXIT": str(smoke_exit),
+        }
+        smoke = None
+        if deployment.returncode == 0:
+            smoke = subprocess.run(
+                ["bash", "-c", '''python3() {
+  if [[ "$1" == deploy/smoke_test.py ]]; then
+    return "$TEST_SMOKE_EXIT"
+  fi
+  command python3 "$@"
+}
+''' + run_block("Smoke test public URL")],
+                cwd=ROOT, env=env, capture_output=True, text=True, timeout=30,
+            )
+
+        # These outcomes are supplied by the Actions runner in the real workflow.
+        env["SMOKE_OUTCOME"] = (
+            "skipped" if smoke is None else
+            "success" if smoke.returncode == 0 else "failure"
+        )
+        env["JOB_RESULT"] = (
+            "success" if deployment.returncode == 0 and
+            smoke is not None and smoke.returncode == 0 else "failure"
+        )
+        report = subprocess.run(
+            ["bash", "-c", run_block("Record workflow result")],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=30,
+        )
+        return deployment, smoke, report, (self.directory / "summary.md").read_text()
+
+    def test_final_success_requires_smoke_success(self):
+        for mode in ["release", "rollback"]:
+            with self.subTest(mode=mode):
+                deployment, smoke, report, summary = self.finish_workflow(mode)
+                self.assertEqual(deployment.returncode, 0, deployment.stderr)
+                self.assertEqual(smoke.returncode, 0, smoke.stderr)
+                self.assertEqual(report.returncode, 0, report.stderr)
+                self.assertIn("Final release status: SUCCESS", summary)
+                self.assertIn("Smoke test: PASS", summary)
+                self.assertIn(SHA_B, summary)
+                self.assertIn("Application digest:", summary)
+                self.assertIn("Cloud Run revision: borrowbase-new", summary)
+                self.assertNotIn("- Status: SUCCESS", summary)
+
+    def test_smoke_failure_reports_failed_and_preserves_failure(self):
+        for mode in ["release", "rollback"]:
+            with self.subTest(mode=mode):
+                deployment, smoke, report, summary = self.finish_workflow(
+                    mode, smoke_exit=7,
+                )
+                self.assertEqual(deployment.returncode, 0, deployment.stderr)
+                self.assertEqual(smoke.returncode, 7)
+                self.assertNotEqual(report.returncode, 0)
+                self.assertIn("Final release status: FAILED", summary)
+                self.assertIn("Smoke test: FAIL", summary)
+                self.assertIn("Application digest:", summary)
+                self.assertIn("Cloud Run revision: borrowbase-new", summary)
+                self.assertNotIn("SUCCESS", summary)
+
+    def test_deployment_failure_reports_smoke_not_run(self):
+        for mode, failure in [("release", "migration"), ("rollback", "traffic")]:
+            with self.subTest(mode=mode):
+                deployment, smoke, report, summary = self.finish_workflow(
+                    mode, failure=failure,
+                )
+                self.assertNotEqual(deployment.returncode, 0)
+                self.assertIsNone(smoke)
+                self.assertNotEqual(report.returncode, 0)
+                self.assertIn("Final release status: FAILED", summary)
+                self.assertIn("Smoke test: NOT RUN", summary)
+                self.assertIn("Migration execution failed" if mode == "release"
+                              else "Traffic switch failed", summary)
+                self.assertNotIn("SUCCESS", summary)
 
 
 if __name__ == "__main__":
