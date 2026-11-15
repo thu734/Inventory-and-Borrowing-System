@@ -67,7 +67,9 @@ exists() {
 
   if [[ "$detail" =~ ^${prefix}(HTTPError\ 404:\ Not\ Found\.?|NOT_FOUND(:[[:space:]].*)?)$ ]] ||
      [[ "$detail" =~ ^${prefix}The\ resource\ \'[^\']+\'\ does\ not\ exist\.?$ ]] ||
-     [[ "$detail" == "ERROR: (gcloud.run.services.describe) Cannot find service [$SERVICE_NAME]" ]]; then
+     [[ "$detail" == "ERROR: (gcloud.run.services.describe) Cannot find service [$SERVICE_NAME]" ]] ||
+     [[ "${1:-} ${2:-} ${3:-}" == 'run jobs describe' && -n "${4:-}" &&
+        "$detail" == "ERROR: (gcloud.run.jobs.describe) Cannot find job [${4:-}]." ]]; then
     return 1
   fi
 
