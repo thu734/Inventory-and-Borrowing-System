@@ -1,260 +1,259 @@
-# BorrowBase Lab 5 deployment draft
+# BorrowBase Deployment Runbook
 
-Status: **First-deployment repair under review; successful live deployment remains unverified**. Updated 14 November 2026. Execution gates and issue backlog are in [implementation plan](implementation-plan.md). The official handout, Student Guide, starter kit, Group Work Specification and Deliverable 1 were reconciled for this draft.
+## 1. Overview and Technology Stack
 
-This document distinguishes user-reported cloud state from locally verified code and historical CI evidence; no successful live deployment is asserted. The L5-04 local Docker procedure and C-03 evidence are maintained in [docker.md](docker.md). `lab5-staging` is the Lab 5 integration branch and `main` is the release branch.
+Browser → one HTTPS Cloud Run service serving React/Vite assets and the Express API → Prisma → Cloud SQL PostgreSQL. The runtime uses Node 24.14+ within 24.x, Prisma 6.19 and Argon2. Artifact Registry stores images; Secret Manager supplies credentials; GitHub Actions authenticates through Workload Identity Federation (WIF).
 
-## Architecture and resource inventory
+The infrastructure follows Student Guide V1.1. BorrowBase-specific adaptations are npm workspaces, separate application (`runtime`) and maintenance (`build`) images, Borrower/Custodian roles instead of an administrator, and a GET-only smoke test with no login/session writes. There is no registration or attachment feature; `TZ` is not an application setting. Local container instructions and historical build results are in [docker.md](docker.md).
 
-Browser → one HTTPS Cloud Run service (compiled Express + built React) → Prisma → Cloud SQL PostgreSQL. Artifact Registry stores versioned images; Secret Manager supplies secrets; GitHub Actions authenticates through restricted WIF. Runtime identity and deployment identity are separate and least-privilege. Main is release; lab5-staging is integration. Node 24.14+ within 24.x, shared npm workspace lockfile, Prisma 6.19 and Argon2 require compatible native Linux artifacts.
+**Canonical URL:** https://borrowbase-fniy3qjctq-as.a.run.app
 
-| Resource | Proposal | Actual / evidence |
-|---|---|---|
-| Project ID | `cpe334-borrowbase` | Verified by the team; resource inventory still pending |
-| Region | `asia-southeast1`, subject to quota and cost review | Preferred; quota evidence pending |
-| Cloud Run | `borrowbase` | Pending |
-| Artifact Registry repository | `borrowbase`, image `borrowbase` | Pending |
-| Cloud SQL instance / database | `borrowbase-pg` / `borrowbase` | Pending sizing/version/connection policy |
-| Secret resources | `borrowbase-database-url`, `borrowbase-csrf-secret` | Pending; never record values |
-| Runtime / deploy identities | `borrowbase-runtime` / `borrowbase-deployer` | Pending permissions review |
-| WIF pool / provider | `borrowbase-github` / `github` | Pending trust configuration |
-| Canonical HTTPS origin | Actual stable Cloud Run service URL, no path/trailing slash | Pending |
-| Latest main SHA / digest / revision | To be filled after deployment | None verified |
+Cloud Run `status.url` and deployed `APP_ORIGIN` are confirmed to match this origin exactly, with no path or trailing slash. The [frontend](../../../frontend/src/lib/api-client.ts) uses relative `/api/v1` requests and same-origin cookies. The [backend](../../../backend/src/app.ts) rejects login when `Origin` differs from `APP_ORIGIN`; an alternate hostname for the same service is a different origin. Preserve exact Origin/CSRF checks and production Secure, HttpOnly, SameSite=Lax cookies.
 
-Prefer managed Cloud SQL connection through an approved supported connector/socket path and runtime Cloud SQL access; verify exact Prisma PostgreSQL URL and host/socket behavior against starter/current official guidance before implementation. Do not invent a URL or enable broad database network access to solve connectivity. Bound Prisma pool/Cloud Run instance counts against SQL capacity; start with the smallest supported configuration meeting the handout and observed load. Final size, max instances, connection limit and cost estimate require confirmation; no arbitrary settings asserted.
+Manual verification on Release B confirmed Borrower login, duplicate pending-request rejection, request status `FULFILLED`, asset availability `Unavailable` and an active Loan for Demo Borrower. These observations establish the displayed checkout outcome; they do not alone show the actual Custodian action or establish additional automated/security tests. Use **Refresh Equipment** if the catalog remains stale after checkout.
 
-## Environment and secrets
+<a id="architecture-and-resource-inventory"></a>
 
-| Name | Purpose / proposed source | Present source behavior |
-|---|---|---|
-| NODE_ENV | `production`, service configuration | Validated; selects Secure cookies |
-| PORT | Cloud Run injected value; listen on accessible interface | Validated integer, defaults 3000; unspecified listener host is compatible |
-| APP_ORIGIN | Exact canonical HTTPS origin, non-secret configuration | Exact origin validation; production requires HTTPS |
-| DATABASE_URL | Secret Manager reference; least-privilege app DB access | Required; Prisma reads it; do not print URL |
-| CSRF_SECRET | Secret Manager; strong random value, stable across revisions | Min length validated, placeholder rejected; rotation invalidates existing CSRF derivation |
-| RELEASE_SHA | Proposed image build/release metadata | Not currently implemented; bind to built commit, not an unrelated deploy-time value |
-| SEED_BORROWER_PASSWORD / SEED_CUSTODIAN_PASSWORD | Controlled one-time synthetic bootstrap only, minimum 12 characters | Never routine runtime or public log data |
-| SYS01_TEST_DATABASE | Isolated test processes only | Must be true for protected PG test suites; never production configuration |
+## 2. GCP Resource Configuration
 
-Root environment examples serve CLI/seed; backend examples serve development. Existing example DB names differ: align local URLs explicitly. Never commit env files, service account JSON keys, credentials, tokens, cookies, full secret-bearing URLs or unredacted console output. Frontend Vite variables are public; no secrets there. Keep same-origin relative `/api/v1` requests; no permissive CORS workaround. A public demo still requires Borrower/Custodian application authentication; share grading credentials using the approved private channel after lecturer requirements are known.
-
-## Existing production runtime contract
-
-The Docker build installs from the shared workspace lockfile, generates Prisma Client, builds backend and frontend, and runs `node backend/dist/server.js` with the production dependencies and built static assets. Local build/run and C-03 evidence are tracked in [docker.md](docker.md).
-
-The existing server mounts real API routes before the built frontend and guarded browser SPA fallback. Production-runtime tests cover static delivery and JSON 404 behavior for unknown APIs and missing assets. The static path is resolved from the server module, not the process working directory.
-
-Required probe: `/api/ready` returns success when PostgreSQL is reachable and HTTP 503 when it is not, without exposing SQL errors or secrets. Existing startup connects DB before listening, handles SIGTERM/SIGINT and disconnects after server close. Avoid unnecessary proxy trust; assess IP-based limiter behavior behind Cloud Run before any change.
-
-Production security verification must show Secure, HttpOnly, SameSite=Lax cookies under actual HTTPS, exact Origin acceptance, bad Origin/CSRF rejection, Borrower/Custodian role boundaries and no sensitive response/log leakage. Local HTTP results cannot establish deployed cookie behavior. Session records and CSRF secret must persist across revisions; login limiter remains process-local and is not distributed protection.
-
-## Docker and local PostgreSQL
-
-The local application and isolated PostgreSQL Compose workflow, explicit migration/seed commands, HTTP-vs-HTTPS limitations and C-03 evidence are documented in [docker.md](docker.md). It is separate from cloud deployment and must not be used to infer production HTTPS-cookie behavior. Database test jobs require different guarded DB names; see [plan §7](implementation-plan.md#7-episode-2-actionable-checklist).
-
-## Migrations and seed policy
-
-Committed Prisma migrations are authoritative. `npm run db:migrate` invokes `prisma migrate deploy`; never use production reset, schema push or `migrate dev`. The L5-04 `build` target retains Prisma CLI, schema, migrations, seed and tsx; the final `runtime` target intentionally excludes maintenance tooling. Application startup performs neither migration nor seeding.
-
-The reviewed seed creates missing approved accounts/models/assets without updating existing credentials, roles, active flags, descriptions, associations, requests, loans or sessions. It validates required configuration before writes and sanitizes CLI failures. It is retryable, not fully transactional; a failed run can leave newly created records. Bootstrap remains separately authorized, never automatic on routine deployment. Do not upload local database contents or Sprint 1 verification fixtures.
-
-## Episode 5 Step 5.0 — local script adaptation
-
-Status: code repair and offline verification. The user reports an interrupted live attempt; the repair has been exercised locally in dry-run mode. No successful live migration, bootstrap or deployment is verified by this audit. The reference is the lecturer starter's `deploy/deploy.sh`, README and read-only smoke script; its TokTickIT paths, seed command and secret variables are not BorrowBase defaults.
-
-`deploy/config.sh` is the naming contract for this script and future `release.sh`/deployment workflow:
-
-| Item | Prepared value |
+| Resource | Configuration |
 |---|---|
 | Project / region | `cpe334-borrowbase` / `asia-southeast1` |
-| Registry / application image | `borrowbase` / `borrowbase` |
-| Maintenance image | `borrowbase-maintenance` |
-| SQL instance / database / user | `borrowbase-pg` / `borrowbase` / `borrowbase` |
-| Runtime / maintenance identities | `borrowbase-runtime` / `borrowbase-maintenance` |
-| Migration / explicit bootstrap jobs | `borrowbase-migrate` / `borrowbase-bootstrap` |
+| Cloud Run service | `borrowbase` |
+| Observed Cloud Run scaling | Maximum **3 instances**, confirmed by the team in Cloud Run Console |
+| Cloud SQL instance / database / user | `borrowbase-pg` / `borrowbase` / `borrowbase`; confirmed PostgreSQL **16.15** |
+| Artifact Registry repository / images | `borrowbase` / `borrowbase`, `borrowbase-maintenance` |
+| Runtime / maintenance / deployment identities | `borrowbase-runtime` / `borrowbase-maintenance` / `borrowbase-deployer` |
+| Migration / bootstrap jobs | `borrowbase-migrate` / `borrowbase-bootstrap` |
 | Runtime secrets | `borrowbase-database-url`, `borrowbase-csrf-secret` |
 | Bootstrap-only secrets | `borrowbase-seed-borrower-password`, `borrowbase-seed-custodian-password` |
+| WIF pool / provider | `github-actions` / `github-main` |
+| GitHub deployment environment | `demo`, restricted to `main` |
 
-Names are planned, not verified resources. Future real execution requires a clean checkout matching current remote `main`; a feature branch can be previewed only. `PROJECT_ID`/`REGION` accept the future workflow's `GCP_PROJECT_ID`/`GCP_REGION` aliases and reject a different project/region. Reviewed release, current passing checks, L5-02 billing/budget evidence, quotas, existing-resource inventory and operator authorization remain prerequisites. THB 1,800 is alerts-only; this script does not create or change billing/budgets.
+[deploy/config.sh](../../../deploy/config.sh) defines resource names. [Initial provisioning](../../../deploy/deploy.sh) requests PostgreSQL 16 Enterprise `db-f1-micro`, 10 GB SSD with auto-increase off; Cloud Run port 3000, 1 CPU, 512 MiB, minimum 0 / maximum 1 instance and concurrency 20. These are script settings: the live maximum is **3**, while the script still specifies `--max-instances=1`. Review this difference before provisioning recovery. The database connection uses the Cloud SQL Unix socket `/cloudsql/cpe334-borrowbase:asia-southeast1:borrowbase-pg`, schema `public` and pool limit 3. Inspect live metadata before changing resources.
 
-Prepared behavior:
+Use separate runtime, maintenance and deployment identities with limited SQL, registry, Run and per-secret permissions. WIF should restrict the repository/owner, main ref, deployment workflow and `demo` environment. Deployment uses short-lived credentials, never a service-account JSON key; effective IAM and WIF restrictions require metadata inspection.
 
-- Enable required APIs, create missing registry/PostgreSQL 16 Enterprise `db-f1-micro` resources, and retain existing resources. New SQL uses 10 GB SSD, storage auto-increase off and a backup window; cost/availability must be reviewed before execution. Existing engine/region/edition/tier or storage-auto-increase policy mismatches and lookup errors stop the script for manual inspection; no automatic SQL patch is performed.
-- Generate credentials privately and preserve existing enabled secret versions. Use Prisma's Unix-socket `host=/cloudsql/PROJECT:REGION:INSTANCE`, schema `public` and pool limit 3. Validate reused DB/CSRF secret contents without printing them. Never reset an existing DB user's password to reconstruct a missing secret.
-- Grant Cloud SQL Client to dedicated runtime/maintenance accounts and secret access per secret. The public application receives only DB/CSRF secrets; seed credentials are restricted to maintenance. No WIF, deployer IAM or GitHub rules are configured here.
-- `deploy/cloudbuild.yaml` builds the existing Dockerfile's `runtime` and `build` targets from one source SHA, then both images are resolved to immutable digests. `.gcloudignore` excludes local environment files, dependencies, credentials and artifacts from upload. Dockerfile, Compose and `.github/workflows/pr-ci.yml` are preserved.
-- Run a single-task migration-only job with `npm run db:migrate`; failure prevents service deployment. Bootstrap is off by default. An explicitly approved `--bootstrap-demo` creates a separate job running `npm run db:seed`, with retries disabled. If that job already exists, stop for manual inspection rather than automatically re-executing it. This protects one-time bootstrap but requires separate recovery review after a failed bootstrap.
-- A new service is initially private with an unusable `.invalid` browser origin while its assigned URL is obtained. Only then deploy publicly with the exact HTTPS Cloud Run origin, production cookies, port 3000, 1 CPU, 512 MiB, minimum 0 / maximum 1 instance and concurrency 20. Existing services retain their canonical origin. Origin/CSRF/RBAC code is unchanged. Traffic is directed to the latest ready revision and its image is checked against the selected digest.
-- Read-only smoke uses GET `/api/health` (`status=ok`, server liveness without database access), `/api/ready` (`status=ready`, database connectivity), `/` (React HTML), `/api/v1/auth/me` (401) and an unknown API (JSON 404). Both probe responses use no-store. BorrowBase has no public categories endpoint. No smoke login, cookies or domain writes occur. Public Borrower/Custodian acceptance remains a later manual step.
+## 3. Environment Variables and Secrets
 
-Local checks: `bash -n deploy/deploy.sh`, `bash -n deploy/config.sh`, and `python3 -B -m unittest discover -s deploy/tests -p 'test_*.py' -v`. Offline tests replace every cloud invocation and HTTP request; they do not invoke the deployment entrypoint in dry-run mode. The earlier Step 5.0 checks passed; current repair checks are reported below. Historical results do not validate later edits. ShellCheck is not installed. Actual Cloud SDK acceptance, IAM propagation, builds, secret injection and public HTTPS behavior are unverified.
+### Runtime
 
-For Step 5.2 plan review: `DRY_RUN=1 bash deploy/deploy.sh`; include `--bootstrap-demo` only when reviewing an explicitly approved initial bootstrap. The preview prints conditional create operations and placeholders, not a verified resource inventory. It performs no cloud calls, credential generation or provisioning. A local repair dry run has completed; Cloud Shell must repeat it from the accepted repaired main release.
+These are all settings read by [runtime validation](../../../backend/src/config/env.ts); Prisma also reads `DATABASE_URL`.
 
-Future `release.sh`/workflow must source the same names, build both artifacts for the accepted main SHA, update the migration job with the **maintenance** digest and service with the **application** digest, and never invoke bootstrap on releases or rollback. Rollback skips migrations and seed. The existing PR CI is not a reusable deployment workflow; WIF/merge gates remain Member 2's L5-07 work, and main-only automatic deployment is L5-08. No release script or deployment workflow is asserted to exist yet.
+| Name | Purpose / requirement or default | Sensitive? | Value source |
+|---|---|---|---|
+| NODE_ENV | Selects production Secure cookies; default `development`; cloud uses `production` | No | Service configuration; Docker production default |
+| PORT | Listener port, integer 1–65535; default 3000 | No | Cloud Run injects configured port 3000; backend example locally |
+| APP_ORIGIN | Exact origin with no path/trailing slash; default `http://localhost:5173`; production requires HTTPS | No | Team-confirmed deployed value: `https://borrowbase-fniy3qjctq-as.a.run.app`; source development uses port 5173, Compose uses port 13004 |
+| DATABASE_URL | Required PostgreSQL connection setting | Yes | `borrowbase-database-url` numeric Secret Manager version; ignored local env file |
+| CSRF_SECRET | Required, minimum 32 characters; `REPLACE_` placeholders rejected; keep stable across revisions | Yes | `borrowbase-csrf-secret` numeric version; generated local value |
 
-## Episode 5 Step 5.1 — prepare Cloud Shell (manual, not executed)
+### Bootstrap and local database
 
-Release prerequisite: the accepted GitHub `main` release must contain the Docker files, PR CI and the reviewed deployment repair. The repair worktree is based on main release `2e7b386a54a9e4dcc4040b6a49a9ddb9e41fce8f`, which includes L5-06; the current uncommitted repair still needs teammate review, CI and the staging-to-main release process. Verify current GitHub main rather than relying on this recorded base SHA.
+| Name | Purpose / requirement | Sensitive? | Value source |
+|---|---|---|---|
+| SEED_BORROWER_PASSWORD / SEED_CUSTODIAN_PASSWORD | Required only for explicit seed; at least 12 characters each | Yes | Bootstrap-only Secret Manager references; local synthetic values for development |
+| POSTGRES_USER / POSTGRES_DB | Required Compose database user/name; used to construct local DATABASE_URL | No | `.env.docker`, copied from `.env.docker.example` |
+| POSTGRES_PASSWORD | Required Compose database credential; use a URL-safe local value | Yes | Ignored `.env.docker`; never a cloud credential |
 
-Sign in to the project-owning Google account, select the project in Console, and open Cloud Shell. Verify the active CLI account matches that account:
+### Tests
+
+| Name | Purpose / requirement | Sensitive? | Value source |
+|---|---|---|---|
+| SYS01_TEST_DATABASE | Must equal `true` for guarded database suites | No | Explicit isolated test process or CI step |
+| DATABASE_URL / SEED_*_PASSWORD | Suite-specific disposable DB; seed passwords only where seed is invoked | Yes | CI disposable configuration or private local test environment |
+| CI_PG_USER / PGUSER | Disposable PostgreSQL setup user | No | PR CI job configuration |
+| CI_PG_PASSWORD / PGPASSWORD | Disposable PostgreSQL setup credential | Yes | PR CI derives it for each run/attempt; never a production credential |
+
+### Pipeline
+
+| Name | Purpose / requirement | Sensitive? | Value source |
+|---|---|---|---|
+| GCP_PROJECT_ID / GCP_REGION | Required deployment target | No | GitHub environment `demo`: `cpe334-borrowbase` / `asia-southeast1` |
+| WIF_PROVIDER | Required OIDC provider | No | `demo`: `projects/785698287490/locations/global/workloadIdentityPools/github-actions/providers/github-main` |
+| WIF_SERVICE_ACCOUNT | Required deploy identity | No | `demo`: `borrowbase-deployer@cpe334-borrowbase.iam.gserviceaccount.com` |
+| PROJECT_ID / REGION | Script target; accept GCP_* aliases, default to BorrowBase project/region | No | Workflow maps the GitHub variables; operator shell for first provisioning |
+| RELEASE_SHA | Selected application commit; full lowercase 40-character SHA | No | Workflow derives from GITHUB_SHA or manual `release_sha`; not read by the app |
+| DRY_RUN | `deploy.sh` defaults to 0; `release.sh` defaults to 1 | No | Operator explicitly uses 1 for preview; deployment workflow sets 0 |
+
+### Build and workflow-generated settings
+
+| Name | Purpose | Sensitive? | Value source |
+|---|---|---|---|
+| PRISMA_SKIP_POSTINSTALL_GENERATE | Skip Prisma postinstall generation in the production-dependencies stage | No | Dockerfile sets `true`; generated client is copied from the build stage |
+| REQUESTED_SHA | Optional application version to restore | No | Workflow input `release_sha` |
+| RELEASE_MODE / APP_IMAGE / MAINT_IMAGE | Release/recovery mode and SHA-tagged image paths | No | Deploy workflow derives them from the target and selected SHA |
+| JOB_RESULT / SMOKE_OUTCOME | Final deployment and smoke outcomes | No | GitHub job/step contexts |
+| BUILD_RESULT / UNIT_API_UI_RESULT / POSTGRES_RESULT / DOCKER_RESULT | Required CI job outcomes | No | Reusable CI `needs` results |
+| PR_HEAD_SHA | Source version recorded by CI | No | Pull-request head SHA, or workflow commit for a main release |
+| GITHUB_SHA / GITHUB_REF | Workflow commit and branch; main is required for deployment | No | GitHub Actions runner |
+| GITHUB_ENV / GITHUB_STEP_SUMMARY | Files used for derived variables and release/CI summaries | No | GitHub Actions runner |
+| GITHUB_SERVER_URL / GITHUB_REPOSITORY / GITHUB_RUN_ID | Workflow-run links in summaries | No | GitHub Actions runner |
+
+`release_sha` is a workflow input, not an application setting. Image prefixes and `SERVICE_URL` in command examples are derived shell variables. Resource names are constants in `deploy/config.sh`.
+
+Root [.env.example](../../../.env.example) serves Prisma CLI/seed; [backend/.env.example](../../../backend/.env.example) serves source development; [.env.docker.example](../../../.env.docker.example) serves Compose. Root/backend examples name different databases: align the ignored local files with the intended development database. The backend dev script loads `backend/.env`; production startup requires injected variables. Compose explicitly receives `.env.docker` and uses development HTTP at `http://localhost:13004`.
+
+Cloud secrets use numeric Secret Manager versions. Keep DB/CSRF references compatible across revisions; CSRF rotation changes derived tokens. Bootstrap passwords are injected only into the separate bootstrap job. Never publish env values, connection strings, passwords, cookies or tokens. Resolve demo credentials privately from the versions actually used; seed preserves existing passwords, so `latest` is not proof of an account's password.
+
+## 4. Build, Test and Local Run
+
+Run from the repository root with Node >=24.14.0 <25 and npm. Create a dedicated development database and configure the ignored root/backend env files before database operations. Docker requires Compose/Buildx and `linux/amd64` support; use [docker.md](docker.md) for container build/run, maintenance commands and volume preservation.
 
 ```bash
-gcloud auth list --filter=status:ACTIVE --format='value(account)'
-export PROJECT_ID=cpe334-borrowbase
-export REGION=asia-southeast1
-gcloud config set project "$PROJECT_ID"
-gcloud config get-value project
+npm ci
+npm run db:generate
+npm run typecheck
+npm run build
+npm test -w backend -- --exclude '**/*.postgres.test.ts'
+npm run test:ui
+bash -n deploy/config.sh
+bash -n deploy/deploy.sh
+bash -n deploy/release.sh
+python3 -B -m unittest discover -s deploy/tests -p 'test_*.py' -v
 ```
 
-For a new Cloud Shell checkout:
+After migration and optional initial seed (Section 5), `npm run dev` starts the API and Vite UI at `http://localhost:5173`. Production startup, with runtime variables injected and both workspaces built:
 
 ```bash
+node backend/dist/server.js
+```
+
+[PR CI](../../../.github/workflows/pr-ci.yml) runs F-01–F-04 PostgreSQL suites in separate disposable databases with suite-specific guards. Follow its setup for integration testing; never target the development/demo/cloud database. `test:api` covers authentication only, and unfiltered `npm test` needs guarded database setup. CI currently omits `prisma/tests/foundation.test.ts` and `prisma/seed-tests/seed.postgres.test.ts`; a passing run does not establish execution of those suites.
+
+## 5. Database Migrations and Seeding
+
+The committed [Prisma migrations](../../../prisma/migrations/) are authoritative. With the intended database privately configured:
+
+```bash
+npm run db:migrate
+# Optional initial synthetic data; configure both SEED_*_PASSWORD values first:
+npm run db:seed
+```
+
+`db:migrate` runs `prisma migrate deploy`. Cloud releases use the maintenance image containing Prisma CLI, migrations and seed tooling; the final application image excludes them. `release.sh` updates `borrowbase-migrate` to the selected maintenance digest and executes it with `--wait` before updating the service. Startup runs neither migrations nor seed. Never use database reset, schema push or production `migrate dev`.
+
+[Seed](../../../prisma/seed.ts) creates missing approved users/models/assets with empty-update upserts. Existing passwords, roles, serviceability, requests, Loans and sessions are preserved. Both passwords must contain at least 12 characters; all configuration is checked before writes. Seed is retryable but not one transaction, so failure can leave new records. It is not a password-reset or data-repair tool. Cloud bootstrap is a separate authorized operation, never part of routine release/recovery; do not import local fixtures into cloud SQL.
+
+## 6. Initial Cloud Deployment
+
+Use [deploy/deploy.sh](../../../deploy/deploy.sh) only for initial provisioning or reviewed provisioning recovery; routine releases use Section 7. In Cloud Shell, use an authorized account with Git, gcloud, Python 3 and curl. Confirm billing, quotas, costs and existing resources. From a new clean accepted main checkout:
+
+```bash
+set -euo pipefail
 git clone --branch main --single-branch https://github.com/thu734/Inventory-and-Borrowing-System.git
 cd Inventory-and-Borrowing-System
-```
-
-For an existing checkout, inspect `git status --short` and `git branch --show-current` first. Stop if dirty or on another branch; do not reset, stash or overwrite it. On a clean `main`, update using `git pull --ff-only origin main`.
-
-Verify the full source commit against GitHub main immediately before proceeding:
-
-```bash
-git rev-parse HEAD
-git ls-remote origin refs/heads/main
+export PROJECT_ID=cpe334-borrowbase
+export REGION=asia-southeast1
 test "$(git branch --show-current)" = main
 test -z "$(git status --porcelain --untracked-files=all)"
 test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
-git ls-files Dockerfile .dockerignore compose.yaml .github/workflows/pr-ci.yml .gcloudignore deploy docs/labs/lab-05/deployment.md
+DRY_RUN=1 bash deploy/deploy.sh
 ```
 
-Every check must succeed and the listed files must be present in the accepted release. Compare the SHA with GitHub's main commit and retain non-secret evidence. A stale/mismatched checkout is a stop condition. Step 5.1 prepares Cloud Shell only; it creates no infrastructure and requires no additional repository configuration file.
+Inspect an existing checkout before updating it; stop if dirty or on another branch. After reviewing the preview, authorized execution is `DRY_RUN=0 bash deploy/deploy.sh`. The script creates missing resources, builds both images through Cloud Build, resolves digests, migrates, deploys and smoke-tests. A new service starts private until its exact URL is known. SQL-policy mismatches, ambiguous lookup failures and credential inconsistencies stop provisioning rather than silently changing existing data/settings.
 
-## Episode 5 Step 5.2 — plan review (locally verified; repeat in Cloud Shell)
+Default provisioning does not seed. For separately approved initial demo bootstrap, preview with `DRY_RUN=1 bash deploy/deploy.sh --bootstrap-demo`, then execute `DRY_RUN=0 bash deploy/deploy.sh --bootstrap-demo`. This creates `borrowbase-bootstrap` running `npm run db:seed`. If that job already exists, inspect its execution; automatic re-execution is refused. Reconcile partial failures and missing/disabled secret versions privately, without automatic rotation or reseeding.
 
-After Step 5.1 succeeds, run this in that repository folder:
-
-```bash
-DRY_RUN=1 PROJECT_ID="$PROJECT_ID" REGION="$REGION" bash deploy/deploy.sh
-```
-
-Read the planned operations in order: APIs → Artifact Registry → SQL instance/database → dedicated service accounts and Cloud SQL Client → DB user/secrets and per-secret access → Cloud Build for runtime/maintenance images → migration job → Cloud Run service. The URL, digests and revision in the preview are placeholders. Printed commands and the summary are simulation only, not deployment evidence. Repeat this plan review after every script change; the local dry run does not establish successful Cloud Shell preparation or cloud deployment. Optional initial bootstrap needs separate authorization and is never part of routine release.
-
-## Episode 5 Steps 5.3–5.8 — authorized live verification and evidence
-
-These are instructions for a later authorized operator, not operations executed by this audit. Last user-observed state: `borrowbase-pg` RUNNABLE, PostgreSQL 16, `db-f1-micro`, storage auto-increase disabled; registry `borrowbase` exists; database `borrowbase`, BorrowBase identities/secrets, images and Cloud Run resources were absent. State can change; verify it before execution. Preserve existing SQL/registry resources. The corrected explicit HTTP 404 classification permits missing-resource creation; 403, network and ambiguous failures stop. An existing DB user without its secret, an empty/disabled secret version, or an existing bootstrap job requires manual reconciliation without credential rotation, deletion or automatic reseeding.
-
-### 5.3 First deployment and failure recovery
-
-Only after the reviewed repaired main release is accepted, Step 5.1 matches that exact clean main SHA, Step 5.2 has been reviewed, and billing/budget/quota/operator prerequisites are confirmed, the authorized operator uses `PROJECT_ID="$PROJECT_ID" REGION="$REGION" bash deploy/deploy.sh`. Expect a lengthy SQL/build operation; do not interrupt it. Default behavior migrates but never creates synthetic accounts. Initial synthetic bootstrap is a separately approved `--bootstrap-demo` operation; plan that approval before the first login acceptance test.
-
-Stop on any failure. The preceding command is redacted; Cloud Build failures point to the build history, and job failures print a read-only execution-list command. Inspect the exact failed execution and its logs privately in Console before retrying. Never publish raw logs or secret values. The script does not reset failed migrations, overwrite secret versions, change existing passwords, delete resources or automatically rerun an existing bootstrap job. A failed seed may have partially created records: inspect and authorize recovery separately. A failed smoke test is a failed release, even if a revision already receives traffic; automatic rollback is not implemented.
-
-### 5.4 Verify storage policy
-
-New SQL creation disables auto-increase. Reused SQL must already have it disabled, the reviewed edition/tier and engine/region, otherwise the script stops rather than patching. Verify `borrowbase-pg` in Cloud SQL Console: PostgreSQL 16, Enterprise, `db-f1-micro`, database `borrowbase`, storage auto-increase off. This meets the guide's desired state without redundantly patching the already-correct instance. Any needed policy change requires separate authorization. Cloud SQL remains billable while the app is idle; Cloud Run's maximum 1 is per revision and is not a strict service-wide cost cap during rollout.
-
-### 5.5 Public URL, probes, smoke and browser workflow
-
-For a later authorized verification session, retrieve the assigned URL with explicit project/region:
+Verify the public service from the repository root:
 
 ```bash
 SERVICE_URL=$(gcloud run services describe borrowbase --region="$REGION" --project="$PROJECT_ID" --format='value(status.url)')
-printf '%s\n' "$SERVICE_URL"
+test -n "$SERVICE_URL"
 curl --fail --show-error "$SERVICE_URL/api/health"
 curl --fail --show-error "$SERVICE_URL/api/ready"
 python3 deploy/smoke_test.py "$SERVICE_URL"
 ```
 
-Require HTTPS and the exact assigned origin. Health must return HTTP 200 with `{"status":"ok"}`; it is public, read-only and makes no database call. Readiness must return HTTP 200 with `{"status":"ready"}` and `Cache-Control: no-store` when connected; unavailable DB returns 503. Startup itself still requires the initial DB connection. Smoke checks only GET health, readiness, HTML, anonymous identity (401) and an unknown API (JSON 404). Neither a printed URL nor a completion banner proves these responses.
+Use the actual assigned HTTPS origin returned by `status.url` and ensure deployed `APP_ORIGIN` matches it exactly; the canonical URL above records the current deployment. [Smoke](../../../deploy/smoke_test.py) requires health 200, readiness 200, home HTML 200, anonymous `/api/v1/auth/me` 401 and unknown-API JSON 404. Readiness probes PostgreSQL; it does not verify migration state. Startup requires an initial DB connection; database reconnection may temporarily return 503. Smoke is GET-only and does not verify login, checkout or production cookie/security behavior. Manually verify the application workflow separately and keep credentials private.
 
-Open the public URL in a fresh browser without localhost or Google IAM sign-in. Verify the login page and same-origin API calls. Use separate private browser sessions for Borrower and Custodian: Borrower requests a SERVICEABLE available asset; Custodian checks out that pending request; Borrower sees the resulting active Loan. Verify a rule rejection (for example a duplicate pending request) and a role restriction. If the catalog is stale after checkout, explicitly Refresh Equipment and record that known UI limitation. Check Secure/HttpOnly/SameSite=Lax cookie flags, exact HTTPS Origin acceptance, bad-Origin and missing/bad-CSRF rejection privately; never capture cookie/token values or login request bodies.
+## 7. CI/CD Release Procedure
 
-### 5.6 BorrowBase initial access — private, not TokTickIT administrator access
+1. Synchronize `lab5-staging` with `main`, then branch for the linked Lab 5 Issue. Open a feature/fix PR into staging with teammate review and passing CI. Use a reviewed staging → main release PR, apply Lab 5 labels and preserve history. Resume the environment before merging.
+2. Every push to `main` starts [Deploy demo](../../../.github/workflows/deploy.yml). It reruns reusable CI for that main commit, then deploys through environment `demo`. Deployments are serialized with `cancel-in-progress: false`; only the deploy job has `id-token: write`, while PR CI has `contents: read`.
+3. Build `borrowbase` from `runtime` and `borrowbase-maintenance` from `build` for `linux/amd64`, tagging both with the full source SHA. Authenticate through WIF, push, and resolve immutable digests. [release.sh](../../../deploy/release.sh) executes migrations, creates a revision without traffic, verifies its image and Ready condition, then switches and verifies 100% traffic.
+4. Require deployment and smoke success. Record the source SHA, application/maintenance digests, serving revision, URL and run link. A release-script `DEPLOYED` summary still means smoke is pending. Bootstrap and first provisioning are not invoked.
 
-BorrowBase has only Borrower and Custodian roles. It has no administrator role, public user-creation flow, or forced first-login password-change feature. Do not create or require a TokTickIT administrator. Approved synthetic identities are defined by the seed; generated passwords belong only in the bootstrap job's Secret Manager references and the team's approved private credential channel.
+The [main ruleset](https://github.com/thu734/Inventory-and-Borrowing-System/rules/27307986) requires one approval and five up-to-date checks: `Typecheck and build`, `Unit, API and UI tests`, `PostgreSQL integration tests`, `Docker build`, `CI evidence summary`; no bypass actors are configured. PR CI also runs on staging, but no effective staging rules were returned by the inspected API.
 
-After an explicitly approved successful bootstrap execution, inspect the job's secret-reference metadata and record the **numeric versions actually used**, without viewing values in evidence mode. Only the authorized operator may privately retrieve the corresponding `borrowbase-seed-borrower-password` and `borrowbase-seed-custodian-password` versions for login. For example, after setting `BORROWER_SEED_VERSION` from that verified reference, `gcloud secrets versions access "$BORROWER_SEED_VERSION" --secret=borrowbase-seed-borrower-password --project="$PROJECT_ID"` is a private credential-reading operation, not an evidence command. Handle the Custodian reference the same way. Do not assume `latest` matches an existing account's password: seed preserves existing accounts, including previously changed credentials. Failed login requires private reconciliation, never reseeding or automatic password reset.
+Release B followed [feature PR #55](https://github.com/thu734/Inventory-and-Borrowing-System/pull/55) → [release PR #56](https://github.com/thu734/Inventory-and-Borrowing-System/pull/56). Both have approvals, passing checks and review comments: [#55 review comment](https://github.com/thu734/Inventory-and-Borrowing-System/pull/55#issuecomment-6946728096), [#56 review comment](https://github.com/thu734/Inventory-and-Borrowing-System/pull/56#issuecomment-6946722399). [Episode 7 Issue #35](https://github.com/thu734/Inventory-and-Borrowing-System/issues/35) remains open with no follow-up comment or PR cross-reference; its timeline records project-board activity. Its labels and both PRs' labels remain empty.
 
-Do not screen-record, screenshot, tee, paste, log or attach the private retrieval output, login forms, passwords, session cookies, CSRF tokens or connection strings. Do not send credentials to an Issue or chat. Share only through the approved private channel. If bootstrap was not requested, completion means no synthetic accounts were established by that invocation; login acceptance remains outstanding.
+| Release | Main commit | Recorded revision / outcome | Deployment run |
+|---|---|---|---|
+| Original A, [PR #53](https://github.com/thu734/Inventory-and-Borrowing-System/pull/53), from [feature PR #50](https://github.com/thu734/Inventory-and-Borrowing-System/pull/50) | `a436ed18c00f93ed264ee11bb9c53318554f7aaa` | Failed pretraffic image-digest verification; smoke skipped | [43741440983](https://github.com/thu734/Inventory-and-Borrowing-System/actions/runs/43741440983) |
+| Repaired A, [PR #54](https://github.com/thu734/Inventory-and-Borrowing-System/pull/54), direct fix into main | `df1dec5093c515d769203bfc409624c3cbaaf4ab` | `borrowbase-00005-x52`; deployment/smoke passed; Episode 8 rollback target | [43750011019](https://github.com/thu734/Inventory-and-Borrowing-System/actions/runs/43750011019) |
+| **B**, PR #56 | `2f4380539c3aca470f41e93d843144cb6ee3b8a3` | `borrowbase-00006-dd2`; deployment/smoke passed; primary release | [43751546535](https://github.com/thu734/Inventory-and-Borrowing-System/actions/runs/43751546535) |
 
-### 5.7 Console inspection and safe evidence index
+Manual dispatch from `main` with empty `release_sha` performs a normal CI/build/migrate/deploy of the workflow commit; it does not reuse an existing image. A nonempty input selects recovery as described in Section 9. There is no automatic rollback after smoke failure; inspect actual traffic before recovery.
 
-Collect sanitized evidence only after the app works. In Secret Manager evidence views, show names and permissions; never click View secret value. Record actual evidence links/timestamps and the tested source SHA in the Issue or this document; leave unavailable observations marked pending.
+## 8. Identify the Running Commit
 
-| Evidence | Verify / capture without secrets |
-|---|---|
-| APIs | Enabled Cloud Run, SQL Admin, Artifact Registry, Cloud Build, Secret Manager and IAM APIs |
-| SQL | `borrowbase-pg`, engine/edition/tier/region, `borrowbase` database and auto-increase disabled |
-| Identities | `borrowbase-runtime` and `borrowbase-maintenance`; project-level Cloud SQL Client only for these application identities; inspect inherited roles too |
-| Secret permissions | Runtime: DB/CSRF; maintenance: DB plus approved bootstrap password secrets; Secret Accessor per secret, never project-wide; no values |
-| Runtime configuration | NODE_ENV=production, exact HTTPS APP_ORIGIN, PORT=3000; DB/CSRF secret references with numeric versions; no seed-password injection into the app |
-| Scaling/public access | Minimum 0, maximum 1 per revision, concurrency 20, public demo access with application authentication retained |
-| Build/images | Successful build record; both registry images tagged with the full accepted source SHA and their immutable digests |
-| Migration | `borrowbase-migrate` successful execution before service release, maintenance digest and identity; sanitized execution ID/result |
-| Revision/traffic | Ready `borrowbase` revision, application digest matching the image evidence and current traffic at 100% |
-| Public application | Actual HTTPS URL, health/readiness responses, read-only smoke PASS output, credential-free login page and authenticated role/workflow screenshots |
-| Release trace | Reviewed release PR and CI → full source SHA → image digests → ready revision → public URL; record actual values, not simulation placeholders |
-
-TZ is not an application setting in BorrowBase: it stores database timestamps and formats dates in the browser. Document this deliberate difference from the Kit rather than adding unused environment configuration. The guide's maximum 3 is adapted to the stricter reviewed maximum 1.
-
-### 5.8 Completion gate
-
-Do not close the first-deployment Issue based on offline tests or the banner. First verify public HTTPS login, DB readiness, both application roles and the core workflow; verify SQL/database, identities, limited secret permissions, images and storage policy. Post the public service URL and sanitized 5.5/5.7 evidence with the exact tested SHA and migration result to the team's Episode 5 Issue. Move it to Done only after review confirms those observations and no secrets appear in evidence. No such live completion is claimed here.
-
-## Episode 6–8 compatibility contract (future work, not implemented here)
-
-Retain the names in `deploy/config.sh`: project `cpe334-borrowbase`, region `asia-southeast1`, service `borrowbase`, migration job `borrowbase-migrate`, runtime `borrowbase-runtime`, maintenance `borrowbase-maintenance`, registry `borrowbase`, images `borrowbase` and `borrowbase-maintenance`. Both tags must be the same full source SHA. Later releases update the migration job with the maintenance digest and the service with the application digest. Never point the job at the runtime image, which intentionally lacks Prisma CLI/migrations/seed tooling.
-
-- Episode 6: first finish live Episode 5 evidence. Enable IAM Credentials and STS APIs when authorized. Establish actual repository/owner IDs, project number and OIDC subject format; create a separate `borrowbase-deployer`, registry-scoped Artifact Registry Writer, Cloud Run Developer and Service Account User **on both runtime and maintenance identities**. Do not give the deployer secret-value access, SQL admin or general IAM management. Configure keyless WIF restricted to repository/owner IDs, main ref, exact deployment workflow_ref and exact environment subject. Keep pool/provider names consistent (the inventory names are proposals). GitHub environment `demo`, WIF subject and workflow environment must agree. Required variable names are `GCP_PROJECT_ID`, `GCP_REGION`, `WIF_PROVIDER`, `WIF_SERVICE_ACCOUNT`; values require actual verified IDs. Configure active main rules, empty bypass, teammate review, up-to-date branches and the existing four required CI checks; prove a deliberately failing PR is blocked. No JSON service-account keys.
-- Episode 7: add adapted `deploy/release.sh`, `.github/workflows/deploy.yml` and focused offline release tests through review. Existing PR CI has no `workflow_call` trigger and uses pull-request-specific context: either safely refactor it into reusable jobs while preserving existing PR behavior, or run equivalent tests in the deploy workflow. Do not call the Kit's reusable CI path unchanged. Gate production on passing checks for the exact main SHA, serialize releases (`cancel-in-progress: false`), use id-token permission only for deployment, build/push both images, resolve digests, migrate then update service/traffic, run the read-only smoke and publish SHA/digest/revision/URL evidence. Prove two automatic releases. Do not run first-provisioning or bootstrap from the release workflow.
-- Optional Episode 7 login smoke is intentionally unsupported by the current GET-only checker. The app can authenticate a low-privilege Borrower with exact Origin, JSON, a cookie jar, CSRF and logout, but login/logout write session records. There is no self-service account creation, no dedicated smoke account, and the guide prohibits reusing a demo account for this check. Deliberately skip optional login for now; do not set `SMOKE_EMAIL`/`SMOKE_PASSWORD` expecting the current checker to use them. Later opt-in work would require an independently approved dedicated account and a separately reviewed session-writing test with sanitized errors and reliable logout. Keep the default release smoke read-only.
-- Episode 8: retain successful releases A and B with immutable images and evidence. Create BorrowBase Request/Loan data before restart/redeploy and record non-secret IDs/state; verify the same data and eligible session survive. Sessions are in SQL and require the same DB/CSRF references; an expired/revoked session is not a persistence failure. Review additive migration compatibility before rolling back. Rollback and SHA-based roll-forward must skip tests/build/migration/seed, update only the app image and traffic, then smoke-test. Never reverse migrations or reset the database. BorrowBase has no attachment feature, so checksum evidence is not applicable. The existing manual traffic-rollback template is not the Episode 8 pipeline implementation.
-
-## CI, release and identity
-
-PR CI is implemented in [`.github/workflows/pr-ci.yml`](../../../.github/workflows/pr-ci.yml). It runs on pull requests targeting `lab5-staging` and `main`, with stable checks named `Typecheck and build`, `Unit, API and UI tests`, `PostgreSQL integration tests`, and `Docker build`. The workflow reproducibly installs from the npm workspace lockfile, generates Prisma Client, runs the checks, and builds (but does not publish or deploy) the production image for `linux/amd64`. PostgreSQL integration tests use four separate guarded databases; only F-01 is seeded. See the [C-01 record](implementation-plan.md) for the database mapping and current evidence status.
-
-The 14 November 2026 audit verified that PR #43 at head `a422d39cce237fefbfd7e573354cd90930fc7bce` had all four stable checks and the evidence summary passing in [Actions run 43584086269](https://github.com/thu734/Inventory-and-Borrowing-System/actions/runs/43584086269). These results predate the uncommitted audit corrections and do not validate them. Deliberate failing-PR evidence is not revalidated by this audit. No repository rules or branch protection settings were changed.
-
-Recommended required checks for both `lab5-staging` and `main`: the four stable check names above. Configure the rules only after confirming the actual check names from the first Actions run. PR CI has only `contents: read` token permission and receives no cloud auth or production secrets. Root `test:api` alone currently runs only authentication; the CI backend test command excludes the separately guarded PostgreSQL suites, which have their own job and explicit database setup. Blanket `npm test` is not used.
-
-WIF trust must restrict repository and permitted main deployment context; no long-lived JSON keys. Fork/feature PR CI must not receive cloud credentials. Keep runtime access limited to its required secrets/SQL; deployer receives only necessary registry, rollout and controlled migration permissions, not general owner privileges.
-
-Only successful accepted main CI for the exact release SHA may deploy; serialize releases. Build/publish SHA-tagged image, record immutable digest, run approved migration, deploy digest, then smoke test. No deployments from lab5-staging. Manual first deployment must also use an accepted main commit. Rollout fails visibly if smoke fails; do not record green acceptance from mere service creation.
-
-Required release evidence chain: main commit → release PR/review → CI run → image tag and digest → Cloud Run revision/traffic → HTTPS URL and reported RELEASE_SHA → smoke timestamp/result. Record actual fields here or link issue evidence after execution; none currently populated. Preserve known-good image/revision for rollback and grading.
-
-## Persistence and rollback — planned
-
-Use approved synthetic fixtures: Borrower logs in and requests eligible asset, Custodian checks out, Borrower retrieves active Loan. Record non-secret IDs/status and eligible session behavior. Replace/restart application revision without reseeding; verify same user/session/request/Loan and derived unavailability. Separate browser refresh, re-login, app replacement and database restart evidence; they prove different properties.
-
-Before rollback, select previous healthy digest/revision and verify DB schema plus secrets compatibility. Authorized traffic rollback command template:
+Use an account with read access to service/revision/registry metadata. Inspect **all** traffic entries; `latestCreatedRevisionName` or `latestReadyRevisionName` can differ from the serving revision after rollback.
 
 ```bash
-gcloud run services update-traffic SERVICE --to-revisions PREVIOUS=100 --region REGION --project PROJECT_ID
+export PROJECT_ID=cpe334-borrowbase
+export REGION=asia-southeast1
+gcloud run services describe borrowbase --region="$REGION" --project="$PROJECT_ID" \
+  --format='yaml(status.url,status.traffic)'
+# Replace with the actual traffic destination and expected release SHA if different:
+REVISION=borrowbase-00006-dd2
+EXPECTED_SHA=2f4380539c3aca470f41e93d843144cb6ee3b8a3
+gcloud run revisions describe "$REVISION" --region="$REGION" --project="$PROJECT_ID" \
+  --format='yaml(metadata.name,status.conditions,spec.containers[0].image,status.imageDigest)'
+APP_IMAGE=asia-southeast1-docker.pkg.dev/cpe334-borrowbase/borrowbase/borrowbase
+EXPECTED_IMAGE=$(gcloud artifacts docker images describe "$APP_IMAGE:$EXPECTED_SHA" \
+  --project="$PROJECT_ID" --format='value(image_summary.fully_qualified_digest)')
+printf '%s\n' "$EXPECTED_IMAGE"
+gh run view 43751546535 --repo thu734/Inventory-and-Borrowing-System \
+  --json headSha,event,conclusion,url,jobs
 ```
 
-Replace every placeholder from verified inventory before use. Confirm traffic and release SHA, then rerun health/readiness, HTTPS auth/CSRF and persistence smoke. Record forward recovery to approved release. Never reset/seed the DB to make rollback pass. No rollback executed or proven yet.
+Require the intended 100% traffic destination, `Ready=True`, and the selected SHA's resolved image matching the revision. Record any traffic split. Release B's application OCI index digest is `sha256:924a83a64cb06f8a58c0015365ba373ee45899454101036df09faf32d883e3ee`; repaired A's is `sha256:60390a655d6fa3f2452c3a26bffc3c71333d5749e61c58358ca2a58f069eaa38`.
 
-## Troubleshooting and cost precautions
+An OCI index digest may differ from its platform child. With Buildx and registry authentication, `docker buildx imagetools inspect "$EXPECTED_IMAGE"` must show that the revision digest belongs to the index's `linux/amd64` entry; `release.sh` checks this relationship. Trace SHA tag → immutable image/index or child → traffic-serving revision → successful run. The Release B indicator is only a visual cross-check; `RELEASE_SHA` is not an app endpoint/runtime setting. For recovery runs, GitHub `head_sha` identifies workflow code; the release step's requested application SHA, digest and revision identify the restored release.
 
-| Symptom | Next diagnostic / safe action |
-|---|---|
-| Container will not start | Inspect redacted logs, injected PORT, compiled entrypoint, asset paths and native engine compatibility; do not print env |
-| Ready fails / Prisma cannot connect | Check project/region, SQL connection target, runtime IAM, secret version, network/socket and pool limits; do not broaden public DB access blindly |
-| UI works but login fails | Check exact HTTPS APP_ORIGIN, same-origin API path, cookie attributes and Origin/CSRF headers; do not disable guards |
-| API miss returns HTML | Correct SPA fallback order/path tests; preserve JSON error handling |
-| Cookie lost after revision | Check stable secret/DB and session expiry, distinguish new login from persisted session |
-| CD unauthorized | Inspect WIF repository/main claim and least-privilege bindings; never replace with JSON key workaround |
-| Migration/smoke fails | Stop rollout, inspect sanitized result; previous traffic only if compatible; preserve records |
-| Catalog still says Available after checkout | Known Sprint 1 UI freshness defect; explicit Refresh Equipment shows DB/API state. Record limitation, propose narrow fix if mandatory check requires it |
+## 9. Persistence and Recovery
 
-The planning brief reports an Active Free Trial/remaining credit and alerts-only **THB 1,800**, with actual-cost thresholds **10%, 25%, 50%, 90%** (THB 180, 450, 900, 1,620). Keep these values; project billing, budget scope/recipients and configuration screenshots remain pending. **Budget alerts do not stop spending.** Do not substitute the guide's USD example.
+SQL stores application records and sessions; preserve its database and compatible DB/CSRF secret references. [Episode 8's execution record](https://github.com/thu734/Inventory-and-Borrowing-System/issues/36#issuecomment-6917483159) confirms a Cloud SQL restart and existing-revision rollback/roll-forward retained the same pending request and authenticated Borrower session. [Rollback run 43871680728](https://github.com/thu734/Inventory-and-Borrowing-System/actions/runs/43871680728) selected repaired A; [roll-forward run 43872719800](https://github.com/thu734/Inventory-and-Borrowing-System/actions/runs/43872719800) restored B. Both passed smoke and skipped CI/builds. This demonstrates revision reuse, not creation of a new application revision or a separately observed application-process restart. Local app/container restart results are in [docker.md](docker.md).
 
-Before provisioning, confirm project, quotas, region, smallest adequate SQL configuration and estimated costs. Limit scaling to DB capacity; monitor SQL, storage/backups, registry and any network charges even when Cloud Run is idle. Do not infer all services are free from trial status. Preserve service/grader access through lecturer-confirmed grading date (pending). Record monitoring contact and cadence when both members agree; later cleanup requires explicit approval and a retained-data decision, followed by billing verification.
+### Rollback and roll-forward
 
-## Actual verification and handover record
+Before recovery, confirm the target was healthy and its schema, origin and secret references remain compatible. The image and matching Ready historical revision must still exist; recovery does not recreate deleted revisions or reverse migrations.
 
-Local repair tests and the guarded dry-run entrypoint are executed during the final audit; their actual results are reported with the review. No cloud resource inspection, live deployment, persistence or rollback is performed by that audit. Historical Sprint 1 results and limits are in [integration evidence](../../sprints/sprint-1/evidence/Sprint-1-integration-verification.md). Known Prisma audit findings, process-local limiter and incomplete accessibility/race/clean-checkout evidence remain disclosed.
+1. Open Actions → **Deploy demo** → **Run workflow**, select **main**, and set `release_sha` to repaired A's full SHA from Section 7. Only lowercase 40-character SHAs reachable from main are accepted.
+2. Require `Verify release`, image builds and pushes skipped; deployment and smoke must pass. Recovery reuses the existing image/revision and switches application traffic only: no migration-job update/execution, seed, bootstrap or database restore.
+3. Use Section 8 to verify A's SHA/image/revision and 100% traffic; check the B indicator is absent and the same retained records/session are usable.
+4. Roll forward identically with B's full SHA. This uses the same internal `rollback` mode, skips CI/build/migration again, and restores B's revision/indicator. Recheck records and eligible sessions; expired/revoked sessions need not remain authenticated.
 
-For each future operation, record episode/issue, owner/reviewer, branch/PR/tested SHA, files, exact commands and actual results, sanitized evidence, variable names, blockers and next safe action using the [handoff format](implementation-plan.md#8-kanban-and-handoff). Reviewer approval and permanent task ownership remain pending.
+On migration, image, readiness or traffic failure, stop and inspect sanitized logs. On smoke failure, traffic may already have changed. Never reset/reseed SQL, reverse migrations or rotate credentials merely to make recovery pass. Check DB connectivity, secret-reference versions, exact `APP_ORIGIN` and session expiry before changing access or data.
+
+### Pause and resume
+
+Keep the service available during grading, demos and active pipelines. Coordinate an authorized pause; do not merge into main or dispatch releases while paused. Budget alerts do not cap spending; stopped SQL still incurs storage/backup costs.
+
+Set `PROJECT_ID` and `REGION` as in Section 8. Close public access before stopping SQL:
+
+```bash
+SERVICE_URL=https://borrowbase-fniy3qjctq-as.a.run.app
+gcloud run services remove-iam-policy-binding borrowbase \
+  --member=allUsers --role=roles/run.invoker --region="$REGION" --project="$PROJECT_ID"
+gcloud run services update borrowbase --invoker-iam-check --region="$REGION" --project="$PROJECT_ID"
+curl --silent --output /dev/null --write-out '%{http_code}\n' "$SERVICE_URL/"
+# Require anonymous HTTP 403; stop on unexpected errors or inherited public access.
+gcloud sql instances patch borrowbase-pg --activation-policy=NEVER --project="$PROJECT_ID"
+gcloud sql instances describe borrowbase-pg --project="$PROJECT_ID" --format='value(settings.activationPolicy)'
+```
+
+Require `NEVER`; if the public binding was already absent, inspect that condition rather than ignoring unrelated failures. Invoker-check updates can change revision metadata; recheck traffic/image identity. To resume, retain the target variables and start SQL before restoring access:
+
+```bash
+gcloud sql instances patch borrowbase-pg --activation-policy=ALWAYS --project="$PROJECT_ID"
+gcloud sql instances describe borrowbase-pg --project="$PROJECT_ID" --format='yaml(state,settings.activationPolicy)'
+# Wait for RUNNABLE / ALWAYS before restoring public access:
+gcloud run services add-iam-policy-binding borrowbase \
+  --member=allUsers --role=roles/run.invoker --region="$REGION" --project="$PROJECT_ID"
+curl --fail --show-error "$SERVICE_URL/api/ready"
+python3 deploy/smoke_test.py "$SERVICE_URL"
+```
+
+Require readiness 200, then verify login and retained data before resuming releases. If pausing caused a failed run, review its commit/mode before retrying. Teardown requires separate authorization after grading: retain required data/evidence, disable deployment, inventory exact resources and verify residual billing. No BorrowBase teardown script exists; do not run an unadapted starter script.
