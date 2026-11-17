@@ -16,10 +16,12 @@ Local URLs:
 
 ## Build and first-time startup
 
-Run these commands from the repository root in PowerShell:
+Prerequisites for a clean checkout: Git and Docker with Compose v2/Buildx, enough disk space and `linux/amd64` support (emulation on ARM). The Dockerfile installs Node 24.14.0 and locked npm dependencies inside the build; host Node/npm are needed only for source builds/tests (Node >=24.14.0 <25). Use the root build context with `package-lock.json`, backend/frontend sources and committed Prisma migrations. `.dockerignore` excludes local env files, Git metadata, host dependencies, built output, documentation and artifacts; explicit Dockerfile COPY steps determine packaged content.
+
+Run these commands from a new clean checkout’s repository root in PowerShell. Copy the env example only if `.env.docker` does not already exist; preserve existing configuration:
 
 ```powershell
-Copy-Item .env.docker.example .env.docker
+if (-not (Test-Path .env.docker)) { Copy-Item .env.docker.example .env.docker }
 # Edit .env.docker; do not use the example credentials outside local development.
 docker compose --env-file .env.docker config --quiet
 docker compose --env-file .env.docker build app migrate
@@ -32,12 +34,14 @@ docker compose --env-file .env.docker up -d postgres
 docker compose --env-file .env.docker run --rm migrate db:migrate
 ```
 
-Demo account and equipment seeding is optional. Only run it if the local demo accounts and fixtures are needed; it updates demo account passwords and equipment serviceability:
+Demo account and equipment seeding is optional. Only run it if the local demo accounts and fixtures are needed; it creates missing approved users, models and tagged assets using upserts with empty updates. Existing passwords, roles, active flags, model descriptions, asset associations/serviceability, requests, Loans and sessions are preserved:
 
 ```powershell
 # Optional; omit this command if demo data is not needed.
 docker compose --env-file .env.docker run --rm migrate db:seed
 ```
+
+The seed validates both passwords (at least 12 characters each) and the PostgreSQL URL before writes. It is retryable but not one transaction; failure can leave newly created records. It is not a password reset or data-repair tool.
 
 The two `SEED_*_PASSWORD` values are read only by that explicit command; they are not passed to the application service. Replace the sample values before seeding. Never point these commands at a shared or production database.
 
@@ -62,37 +66,47 @@ docker compose --env-file .env.docker restart postgres
 
 Do not use `docker compose down -v` as routine cleanup: it removes the named database volume and its records. If stopping these services is needed, stop only this Compose project and retain its volume.
 
-## npm audit findings and runtime pruning
+## Historical npm audit findings and runtime pruning
 
-`npm audit --omit=dev --json` reports three high-severity findings (zero critical) associated with GHSA-ggr8-5vv4-36mx. The dependency chain is `@prisma/client@6.19.3`'s optional `prisma` peer, plus root development tooling; `prisma@6.19.3` brings in `@prisma/config@6.19.3`, which brings in `deepmerge-ts@7.1.5`. Consequently, `npm ci --omit=dev` retains the optional peer and its toolchain. Testing `--omit=peer` did not remove these packages.
+At the recorded L5-04 verification, `npm audit --omit=dev --json` reported three high-severity findings (zero critical) associated with GHSA-ggr8-5vv4-36mx. The dependency chain is `@prisma/client@6.19.3`'s optional `prisma` peer, plus root development tooling; `prisma@6.19.3` brings in `@prisma/config@6.19.3`, which brings in `deepmerge-ts@7.1.5`. Consequently, `npm ci --omit=dev` retains the optional peer and its toolchain. Testing `--omit=peer` did not remove these packages.
 
 The application runtime does not need the Prisma CLI/config packages: generation occurs in the build stage, which remains the maintenance image with Prisma CLI available for explicit migrations and seed commands. The production-dependencies stage now removes only `node_modules/prisma`, `node_modules/@prisma/config`, and `node_modules/deepmerge-ts` after `npm ci --omit=dev`. Prisma remains at 6.19.3; no package manifest or lockfile was changed.
 
-| Package/path | Before pruning | Verified candidate runtime |
-|---|---|---|
-| `prisma` 6.19.3 / CLI entrypoint | Present | Absent |
-| `@prisma/config` 6.19.3 | Present | Absent |
-| `deepmerge-ts` 7.1.5 | Present | Absent |
-| `@prisma/client` | 6.19.3 | 6.19.3, present |
-| Generated Prisma client and native query engine | Present | Present |
-| `argon2` | Present | 0.44.0, present; hash/verify passed |
-| `express`, `cookie-parser`, `zod` | Present | 5.3.0, 1.4.7, 4.6.7; present |
+The install audit precedes filesystem pruning, so build output and the unchanged source dependency graph retain those findings. The mitigation removes unused tooling from the application image; the maintenance image retains Prisma CLI for migrations and seed. No comprehensive final-image vulnerability scan was performed, so the image is not established to be vulnerability-free. Recheck pruning after npm/Prisma packaging changes; no forced audit fix or Prisma upgrade was applied.
 
-The npm install audit runs before the Dockerfile cleanup, so the build output still reports those findings. The source lock/dependency graph also remains unchanged, and no separate vulnerability scan of the final image was run. Filesystem pruning was verified against application startup, a Prisma database query, and Argon2 operation; recheck it if npm's optional-peer resolution or Prisma packaging changes. Package presence or an audit advisory alone does not establish exploitability. No `npm audit fix --force` or Prisma upgrade was run.
+## Final C-03 Clean Checkout and Hardened Image Verification
 
-## Runtime-pruned candidate verification
+Historical verification: **14 November 2026**, branch `feature/l5-04-docker`, initial implementation commit `00f7d1b`; Docker 29.5.2, Compose 5.1.3, Docker Desktop `linux/amd64`. The preliminary build used a 94-file tracked-source context plus the new Docker files, followed by a committed clean-checkout build and separate runtime-pruned candidate. The results below consolidate those stages; they were not rerun for this documentation change.
 
-Built and tested as a separate image/container so the original L5-04 app and PostgreSQL services were not replaced:
+| Check / stage | Recorded result |
+|---|---|
+| Clean checkout / no-cache build | Clean status; `borrowbase-l5-04-clean:verify` built from committed files, 27/27 steps; no host dependencies, ignored env files or untracked application files required |
+| Compose validation / maintenance image | Configuration and app/maintenance builds passed; maintenance retained Prisma CLI/config and migration/seed tooling |
+| Runtime / image identity | `linux/amd64`, Node `v24.14.0`, user `node` / UID 1000; initial local image `sha256:9093384ea1befbc87a8900c1a341ee1e5e0bbf498a194d06adb66756d7f55869` (167,049,903 bytes); pruned candidate `sha256:edca93491dcdf1c73ece7b679069a1bf8ed2a0ee205b42071f3ab06228a54483` (149,283,685 bytes) |
+| UI / API / database | Compose port 13004 and candidate port 13007: HTML 200, readiness 200, unknown API JSON 404 (`NOT_FOUND`); Prisma connection/query and Argon2 hash/verify passed |
+| Runtime pruning | `prisma`, `@prisma/config`, `deepmerge-ts` directories absent; Prisma Client 6.19.3, generated client/native engine, Argon2 0.44.0, Express 5.3.0, cookie-parser 1.4.7 and Zod 4.6.7 retained |
+| Migration / explicit seed | Two committed migrations applied; optional seed passed once manually; neither ran at app startup |
+| App / PostgreSQL restart persistence | Asset `BB-LAP-001` retained ID `fb8deab2-58c2-493a-a65b-070a17a00a11`; named volume `borrowbase-l5-04-postgres-data` retained; no existing project volume deleted |
+| Database reconnection | One readiness 503 after PostgreSQL restart, then five consecutive 200 responses without manually restarting the app; app and PostgreSQL became healthy |
+| Source validation | Typecheck/build passed; backend non-PostgreSQL subset: 12 files / 71 tests; UI: 4 files / 37 tests. Unfiltered `npm test` did not pass because four guarded PostgreSQL suites lacked dedicated test-database setup; they were not run against the demo database |
+| Local origin guard | Production-default candidate with HTTP origin correctly failed HTTPS validation; development configuration succeeded without weakening Origin/CSRF, session or RBAC checks |
+
+Image inputs were Node base `sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20eefb199224a4d8e33d8` and PostgreSQL `sha256:63e83b5a3dc36a917dccb76fe1bd2ac51f1ec9c1deb47ff20d4f04233bf6eae9`. Local PostgreSQL reported **16.16**, separate from Cloud SQL **16.15** in [deployment.md](deployment.md#architecture-and-resource-inventory).
+
+The clean-checkout build commands were:
+
+```powershell
+git clone --no-local --branch feature/l5-04-docker . $cleanDir
+git -C $cleanDir status --porcelain
+docker buildx build --platform linux/amd64 --no-cache --load -t borrowbase-l5-04-clean:verify $cleanDir
+```
+
+`$cleanDir` is a new temporary checkout directory. From that checkout, use the build/start procedure above to run the app and maintenance image against the dedicated local database. Keep the named volume when restarting or stopping services.
+
+The historical separate-candidate build/run commands were:
 
 ```powershell
 docker buildx build --platform linux/amd64 --load -t borrowbase-l5-04-pruned:local .
-```
-
-Candidate image: `sha256:edca93491dcdf1c73ece7b679069a1bf8ed2a0ee205b42071f3ab06228a54483`, `linux/amd64`, 149,283,685 bytes, configured user `node`; `id -u` inside the running app returned `1000`. The separate `borrowbase-l5-04-maintenance:local` image still physically contains `node_modules/prisma/build/index.js` and `node_modules/@prisma/config/package.json`.
-
-The successful candidate used the existing local `.env.docker` values, the L5-04 Docker network, and Compose's local `NODE_ENV=development` setting:
-
-```powershell
 $envValues = @{}
 Get-Content .env.docker | ForEach-Object {
   if ($_ -match '^([^#=]+)=(.*)$') { $envValues[$matches[1]] = $matches[2] }
@@ -105,175 +119,26 @@ docker run -d --name borrowbase-l5-04-pruned-local `
   -p 127.0.0.1:13007:3000 borrowbase-l5-04-pruned:local
 ```
 
-| Check | Command / observation | Result |
-|---|---|---|
-| UI | `curl.exe -sS -o NUL -w "%{http_code} %{content_type}" http://127.0.0.1:13007/` | `200 text/html` |
-| Readiness | `curl.exe -sS -o NUL -w "%{http_code}" http://127.0.0.1:13007/api/ready` | `200`; PostgreSQL reachable |
-| API miss | `curl.exe -sS -w "\nHTTP=%{http_code} TYPE=%{content_type}" -H "Accept: text/html" http://127.0.0.1:13007/api/v1/l5-04-unknown` | `404 application/json`, code `NOT_FOUND` |
-| Prisma runtime | Candidate image with Prisma CLI/config/deepmerge paths absent; `$connect()` and `$queryRaw SELECT 1` | Passed |
-| Runtime packages | Package filesystem checks in the candidate | Three toolchain packages absent; `@prisma/client` 6.19.3, generated client, Debian OpenSSL 3 query engine and Argon2 present |
-| Argon2 | Hash and verify a local synthetic probe using the candidate runtime | Passed |
-| App restart persistence | Query `BB-LAP-001`, `docker restart borrowbase-l5-04-pruned-local`, then query again | Same ID before and after: `fb8deab2-58c2-493a-a65b-070a17a00a11` |
-
-The first candidate launch used the production image default (`NODE_ENV=production`) with the local HTTP origin and correctly failed the existing HTTPS-origin validation. Retesting with the documented local development setting succeeded; no origin, cookie, CSRF, session, or RBAC checks were weakened. The failed test container `borrowbase-l5-04-pruned` is exited and was left in place; the verified candidate `borrowbase-l5-04-pruned-local` remains running.
-
-The source checks were rerun:
+These candidate names/ports are historical; inspect existing containers before reusing them. Do not print `$envValues` or `$dbUrl`. To inspect pruning without database credentials:
 
 ```powershell
-npm run typecheck
-npm run build
-Set-Location backend
-npm test -- --exclude '**/*.postgres.test.ts'
-Set-Location ..
-npm run test:ui
+docker run --rm --entrypoint node borrowbase-l5-04-clean:verify -e "const fs=require('fs'); for(const p of ['prisma','@prisma/config','deepmerge-ts']) console.log(p,fs.existsSync('/app/node_modules/'+p))"
 ```
 
-All passed: typecheck and build; backend 12 files / 71 tests; UI 4 files / 37 tests. The PostgreSQL integration suites were not run against the shared L5-04 demo database.
-
-## C-03 build/run and persistence evidence
-
-Verified 14 November 2026 with Docker 29.5.2 and Compose 5.1.3 on Docker Desktop `linux/amd64`. The clean build context contained 94 tracked-source files plus the new L5-04 Docker files; it did not include host `node_modules`, ignored local environment files or Git metadata. A generated, ignored `.env.docker` supplied local-only values and was never printed or committed. The services below are the dedicated L5-04 resources; no pre-existing containers or volumes were modified.
-
-| Evidence | Command / observation | Result |
-|---|---|---|
-| Clean context | `docker buildx build --platform linux/amd64 --load -t borrowbase-l5-04-app:local $temp` where `$temp` was a temporary context assembled from tracked files and the new Docker files | Passed; `linux/amd64` image built and loaded |
-| Compose config/build | `docker compose --env-file .env.docker.example config --quiet`; `docker compose --env-file .env.docker build app`; `docker compose --env-file .env.docker build migrate` | Passed |
-| Image/platform/user | `docker image inspect borrowbase-l5-04-app:local` | `linux/amd64`, Node `v24.14.0`, configured user `node` (UID 1000), 167,049,903 bytes; local image ID/digest `sha256:9093384ea1befbc87a8900c1a341ee1e5e0bbf498a194d06adb66756d7f55869` |
-| React UI | `GET http://127.0.0.1:13004/` | HTTP 200, `text/html` |
-| JSON API miss | `GET /api/v1/l5-04-unknown` with `Accept: text/html` | HTTP 404, `application/json`, `NOT_FOUND` |
-| PostgreSQL readiness | `GET http://127.0.0.1:13004/api/ready` | HTTP 200, `{"status":"ready"}` |
-| PostgreSQL connectivity | `docker compose --env-file .env.docker run --rm migrate db:migrate`; PostgreSQL health and app readiness | Passed; two checked-in migrations applied, PostgreSQL 16.16 healthy |
-| Explicit demo seed | `docker compose --env-file .env.docker run --rm migrate db:seed` | Passed once, manually; no routine startup seeding |
-| Application restart | `docker compose --env-file .env.docker restart app`; queried seeded Asset `BB-LAP-001` | Same ID before/after: `fb8deab2-58c2-493a-a65b-070a17a00a11` |
-| PostgreSQL restart | `docker compose --env-file .env.docker restart postgres`; named volume retained | Same Asset ID after restart; PostgreSQL and app returned healthy |
-| Isolated resources | `docker compose ps`, `docker volume inspect borrowbase-l5-04-postgres-data` | `borrowbase-l5-04-app` and `borrowbase-l5-04-postgres` healthy; named volume `borrowbase-l5-04-postgres-data` |
-
-Image inputs resolved during this build: `node:24.14.0-bookworm-slim` base `sha256:d8e448a56fc63242f70026718378bd4b00f8c82e78d20eefb199224a4d8e33d8`; PostgreSQL image `postgres:16` resolved to `postgres@sha256:63e83b5a3dc36a917dccb76fe1bd2ac51f1ec9c1deb47ff20d4f04233bf6eae9`. PostgreSQL reported `16.16 (Debian 16.16-1.pgdg13+1)`.
-
-The persistence query used only the synthetic asset ID/code, not credentials or password hashes:
+The restart-persistence query selected only the synthetic asset ID/code:
 
 ```powershell
 $query = 'SELECT id::text || chr(124) || "assetCode" FROM "Asset" WHERE "assetCode" = $$BB-LAP-001$$;'
 $query | docker exec -i borrowbase-l5-04-postgres psql -U borrowbase_local -d borrowbase_l5_04 -At
 ```
 
-Exact Docker commands included:
-
-```powershell
-docker buildx build --platform linux/amd64 --load -t borrowbase-l5-04-app:local $temp
-docker compose --env-file .env.docker config --quiet
-docker compose --env-file .env.docker build app
-docker compose --env-file .env.docker build migrate
-docker compose --env-file .env.docker up -d --no-build postgres app
-docker compose --env-file .env.docker run --rm migrate db:migrate
-docker compose --env-file .env.docker run --rm migrate db:seed
-docker compose --env-file .env.docker up -d --no-deps app
-docker compose --env-file .env.docker restart app
-docker compose --env-file .env.docker restart postgres
-```
-
-`$temp` was the temporary 94-file clean context described above. The clean-context image was run, then Compose rebuilt/recreated the app from the same Dockerfile; final HTTP and persistence checks passed on that Compose-built image.
-
-Exact application validation commands:
+Source validation commands (run from the repository root after dependency/client setup):
 
 ```powershell
 npm run typecheck
 npm run build
-Set-Location backend
-npm test -- --exclude '**/*.postgres.test.ts'
-Set-Location ..
+npm test -w backend -- --exclude '**/*.postgres.test.ts'
 npm run test:ui
-npm test
 ```
 
-`npm run typecheck`, `npm run build`, backend `npm test -- --exclude '**/*.postgres.test.ts'` (12 files / 71 tests), and `npm run test:ui` (4 files / 37 tests) passed. Unfiltered `npm test` did not pass: four backend PostgreSQL suites intentionally require explicitly selected disposable test databases (`DATABASE_URL` and `SYS01_TEST_DATABASE=true` with suite-specific database names); they were not run against the L5-04 demo database. The other 12 backend files and all 4 frontend test files passed.
-
-This evidence establishes local packaging, HTTP behavior and PostgreSQL persistence only. It does not establish a cloud deployment, production HTTPS/Secure-cookie behavior, or a full authenticated borrow/checkout workflow. `npm ci --omit=dev` still reports three high-severity dependency audit findings before the Dockerfile removes the unused packages from the final runtime filesystem; see the runtime-pruning section above. Prisma 6.19 emitted its existing `package.json#prisma` deprecation warning.
-
-### Final Database Recovery Verification
-
-After restarting the PostgreSQL container, the existing asset `BB-LAP-001` retained its original database ID.
-
-The first application readiness request returned HTTP 503 during database reconnection. Without manually restarting the application, five consecutive follow-up readiness requests returned HTTP 200 with `{"status":"ready"}`.
-
-Both the application and PostgreSQL containers subsequently reported healthy status.
-
-**Result: PASS — Data persistence and automatic readiness recovery verified.**
-
-The hardened application image was also verified to run as UID 1000 without the unused `prisma`, `@prisma/config` and `deepmerge-ts` package directories. The npm dependency audit findings remain documented separately.
-## Final C-03 Clean Checkout and Hardened Image Verification
-
-**Verification date:** 14 November 2026  
-**Branch:** `feature/l5-04-docker`  
-**Initial implementation commit:** `00f7d1b`
-
-### Clean Checkout Docker Build
-
-A clean Git checkout was created from the committed local feature branch in a separate temporary directory.
-
-```powershell
-git clone --no-local --branch feature/l5-04-docker . $cleanDir
-git -C $cleanDir status --porcelain
-docker buildx build --platform linux/amd64 --no-cache --load -t borrowbase-l5-04-clean:verify $cleanDir
-```
-
-**Results:**
-
-- Clean checkout: PASS — no uncommitted changes
-- No-cache build: PASS — 27/27 build steps completed
-- Image platform: `linux/amd64`
-- Configured runtime user: `node`
-- Image tag: `borrowbase-l5-04-clean:verify`
-- Build completed without using locally untracked application files
-
-### Runtime Dependency Hardening
-
-The final runtime image was inspected using:
-
-```powershell
-docker run --rm --entrypoint node borrowbase-l5-04-clean:verify -e "const fs=require('fs'); for(const p of ['prisma','@prisma/config','deepmerge-ts']) console.log(p,fs.existsSync('/app/node_modules/'+p))"
-```
-
-**Results:**
-
-| Package directory | Present in runtime image |
-|---|---|
-| `prisma` | No |
-| `@prisma/config` | No |
-| `deepmerge-ts` | No |
-
-The generated Prisma Client and required application runtime dependencies were retained. The separate maintenance image remains responsible for migrations and seeding.
-
-### Application and Database Verification
-
-The hardened application image was rebuilt and deployed locally using Docker Compose.
-
-| Verification | Result |
-|---|---|
-| React frontend | HTTP 200 |
-| Database readiness | HTTP 200 |
-| Unknown API endpoint | JSON HTTP 404 |
-| Non-root runtime user | UID 1000 |
-| PostgreSQL named volume | Verified |
-| Application container restart | Persistence PASS |
-| PostgreSQL container restart | Persistence PASS |
-| Database readiness recovery | PASS |
-
-The synthetic equipment record `BB-LAP-001` retained the same ID before and after application and PostgreSQL restarts:
-
-`fb8deab2-58c2-493a-a65b-070a17a00a11`
-
-Immediately after restarting PostgreSQL, one readiness request returned HTTP 503. Without manually restarting the application, five consecutive subsequent requests returned HTTP 200 with `{"status":"ready"}`.
-
-Both application and PostgreSQL containers subsequently reported healthy status.
-
-### Security and Limitations
-
-- The local Compose setup is loopback-only and uses HTTP development configuration.
-- Production HTTPS Origin validation and Secure-cookie behavior were not disabled.
-- The npm dependency graph still reports three high-severity findings associated with the Prisma CLI/config dependency chain.
-- The targeted packages were absent from the verified runtime image, but no comprehensive final-image vulnerability scan was performed.
-- Full authenticated borrow/checkout workflow testing and production HTTPS authentication remain outside this local Docker verification.
-- No existing PostgreSQL volume or other project resources were deleted.
-
-**Final result:** L5-04 local Docker packaging, clean-checkout build, application/database integration, and restart persistence verification passed.
+This evidence establishes local packaging, HTTP behavior, runtime-pruning checks and restart persistence. It does not establish production Cloud Run operation, HTTPS cookie/security verification or a full authenticated borrow/checkout workflow. Current container state and current vulnerability findings were not rechecked; cloud verification is documented separately in [deployment.md](deployment.md).
