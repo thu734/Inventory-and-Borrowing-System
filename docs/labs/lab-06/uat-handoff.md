@@ -5,11 +5,13 @@
 | Item | Information |
 |---|---|
 | Course / section | CPE334 Software Engineering / 31 |
-| Product team | MT |
+| Product team | Team MT |
 | Project | BorrowBase — Equipment Inventory and Borrowing System (Theme 2) |
-| Members | Moe Htet Aung — 67070503482; Thu Thu Wai — 67070503486 |
-| Independent UAT team / two testers | [Partner team and names] |
-| Handoff date / testing window | [Agreed date/time, Asia/Bangkok] |
+| Members | Moe Htet Aung ; Thu Thu Wai  |
+| Independent UAT team | Duo L — CampusBite |
+| Independent UAT testers | Lae Lae Kaung Nyunt; Naing Zay Linn  |
+| Handoff date | 19 November 2026 |
+| Testing window | Pending confirmation — Asia/Bangkok |
 
 Team MT provides the product, accounts, fixtures and expected behavior. The partner independently executes the cases and records actual results. This package covers Part A; include its complete cases and applicable acceptance criteria in the team's final self-contained Lab 6 PDF. Official submission deadline: 22 November 2026, 23:59 Bangkok.
 
@@ -17,9 +19,14 @@ Team MT provides the product, accounts, fixtures and expected behavior. The part
 
 - Application: https://borrowbase-fniy3qjctq-as.a.run.app
 - Repository: https://github.com/thu734/Inventory-and-Borrowing-System
-- Established source baseline: 6a0e29154c2b2165c486b0bc8d18e3fd2475b2fc.
-- Last owner-confirmed serving revision: borrowbase-00007-jck, 100% traffic.
-- Public access checked on 19 November 2026, approximately 17:40 Bangkok: home, health and readiness returned 200; anonymous /api/v1/auth/me returned 401. This does not verify account login.
+- Sprint 1 source baseline: 6a0e29154c2b2165c486b0bc8d18e3fd2475b2fc
+- Cloud Run service: borrowbase
+- Region: asia-southeast1
+- Serving revision: borrowbase-00007-jck
+- Traffic: 100%
+- Deployment workflow: Deploy demo #6
+- Deployment status: SUCCESS
+- Verification date: 19 November 2026
 
 Team MT confirms the release used for the session before testing; testers record it in A.7. The source baseline and revision above come from separate source/deployment observations; this document does not assert a newly verified image-to-commit association. Notify the partner before changing the tested release.
 
@@ -68,6 +75,22 @@ The following identifiers and starting states are owner-confirmed from deployed 
 | REQ-D1 | A / ASSET-D | a8f615c3-65cd-4715-9924-da4110c5731b | PENDING; fulfilledAt=NULL; no associated Loan |
 | REQ-D2 | B / ASSET-D | 645e6f94-cf61-4ccd-99b6-1d9650163a6a | PENDING; fulfilledAt=NULL; no associated Loan |
 | REQ-E | A / ASSET-E | 52b7588a-07a7-4e9a-bf22-8a665428caed | PENDING; fulfilledAt=NULL; no associated Loan |
+| REQ-E-B | B / ASSET-E | Pending exact UUID verification | PENDING; additional request created during preparation |
+
+During Team MT's UAT preparation on 19 November 2026,
+Borrower B created an additional PENDING request for
+ASSET-E (BB-LAP-UAT6-E-001).
+
+The Custodian interface confirmed four pending requests
+across Assets D and E. Both assets remain available and
+have no active Loans displayed.
+
+For BB-UAT-06 and BB-UAT-07, testers must use Borrower A's
+original REQ-E (52b7588a-07a7-4e9a-bf22-8a665428caed).
+
+For BB-UAT-08, testers must use the original D1 and D2
+requests. Do not reset the database or perform checkout
+before independent UAT.
 
 ASSET-C's existing active Loan is 54fe8bf2-be90-4735-9f36-a08dab7405fb, owned by A. Preserve it unchanged. A/D/E reuse EquipmentModel 6f11b4eb-e438-4c32-ab2b-3e180f367872. No additional setup records are needed for the first run. The new E and D Loans are created only in cases 07 and 08.
 
