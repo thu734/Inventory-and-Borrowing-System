@@ -15,7 +15,7 @@ export function LoginPage() {
     <h1 id="login-heading">Sign in</h1>
     <form onSubmit={submit} aria-busy={busy}>
       <label htmlFor="email">Email</label>
-      <input id="email" name="email" type="email" autoComplete="username" required maxLength={254} value={email} onChange={e => setEmail(e.target.value)} disabled={busy}/>
+      <input id="email" name="email" type="email" autoComplete="username" maxLength={254} value={email} onChange={e => setEmail(e.target.value)} disabled={busy}/>
       <label htmlFor="password">Password</label>
       <input id="password" name="password" type="password" autoComplete="current-password" required maxLength={128} value={password} onChange={e => setPassword(e.target.value)} disabled={busy}/>
       {error && <p role="alert" className="error">{error}</p>}
