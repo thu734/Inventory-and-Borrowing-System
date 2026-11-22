@@ -6,6 +6,7 @@ on:
     branches:
       - lab5-staging
       - main
+      - sprint1-staging
   workflow_call:
 
 permissions:
