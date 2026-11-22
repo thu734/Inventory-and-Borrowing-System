@@ -1,0 +1,9 @@
+# Both artifacts use the existing L5-04 Dockerfile and the same reviewed source.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: [build, --platform, linux/amd64, --target, runtime, -t, '${_APP_IMAGE}', .]
+  - name: gcr.io/cloud-builders/docker
+    args: [build, --platform, linux/amd64, --target, build, -t, '${_MAINTENANCE_IMAGE}', .]
+images:
+  - '${_APP_IMAGE}'
+  - '${_MAINTENANCE_IMAGE}'

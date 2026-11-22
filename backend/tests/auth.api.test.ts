@@ -35,6 +35,26 @@ describe('F-01 Express API behavior (test-double store)', () => {
     expect([...store.sessions.values()][0]?.tokenHash).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(result.body)).not.toContain(encoded);
   });
+  it('uses Secure cookies and exact HTTPS Origin without weakening session or CSRF guards', async () => {
+    const httpsOrigin = 'https://borrowbase-assigned.example.test';
+    const built = createApp({ store, origin: httpsOrigin,
+      csrfSecret: 'test-only-secret-that-is-not-a-real-secret', secureCookies: true, now: () => time });
+    const production = finishApp(built.app);
+    const result = await request(production).post('/api/v1/auth/login').set('Origin', httpsOrigin)
+      .send({ email: 'borrower@example.test', password: 'local-test-password' });
+    expect(result.status).toBe(200);
+    const header = String(result.headers['set-cookie']);
+    expect(header).toContain('Secure');
+    expect(header).toContain('HttpOnly');
+    expect(header).toContain('SameSite=Lax');
+    expect((await request(production).get('/api/v1/auth/me').set('Cookie', cookie(result))).status).toBe(200);
+    expect((await request(production).post('/api/v1/auth/login').set('Origin', 'http://borrowbase-assigned.example.test')
+      .send({ email: 'borrower@example.test', password: 'local-test-password' })).status).toBe(403);
+    expect((await request(production).post('/api/v1/auth/logout').set('Origin', httpsOrigin)
+      .set('Cookie', cookie(result)).send({})).body.error.code).toBe('CSRF_FORBIDDEN');
+    expect((await request(production).post('/api/v1/auth/logout').set('Origin', httpsOrigin)
+      .set('Cookie', cookie(result)).set('X-CSRF-Token', result.body.data.csrfToken).send({})).status).toBe(204);
+  });
   it('TEST-F01-01 supports the Custodian identity', async () => {
     const result = await login('custodian@example.test'); expect(result.body.data.user.role).toBe('CUSTODIAN');
     expect((await request(app).get('/test/role-guard').set('Cookie', cookie(result))).status).toBe(200);

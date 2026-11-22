@@ -1,0 +1,192 @@
+name: Deploy demo
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: "Existing released commit SHA for rollback or roll-forward"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: borrowbase-demo-deployment
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Verify release
+    if: github.event_name == 'push' || inputs.release_sha == ''
+    uses: ./.github/workflows/pr-ci.yml
+    permissions:
+      contents: read
+
+  deploy:
+    name: Deploy BorrowBase
+    needs: test
+    if: >-
+      ${{
+        always() &&
+        (
+          needs.test.result == 'success' ||
+          (
+            github.event_name == 'workflow_dispatch' &&
+            inputs.release_sha != '' &&
+            needs.test.result == 'skipped'
+          )
+        )
+      }}
+    runs-on: ubuntu-latest
+    environment: demo
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      REQUESTED_SHA: ${{ inputs.release_sha }}
+
+    steps:
+      - name: Check out current reviewed workflow
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release request
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$PROJECT_ID" == "cpe334-borrowbase" ]]
+          [[ "$REGION" == "asia-southeast1" ]]
+
+          if [[ -n "${REQUESTED_SHA:-}" ]]; then
+            [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+            git cat-file -e "${REQUESTED_SHA}^{commit}"
+            git merge-base --is-ancestor "$REQUESTED_SHA" origin/main
+
+            RELEASE_MODE=rollback
+            RELEASE_SHA="$REQUESTED_SHA"
+          else
+            RELEASE_MODE=release
+            RELEASE_SHA="$GITHUB_SHA"
+          fi
+
+          PREFIX="$REGION-docker.pkg.dev/$PROJECT_ID/borrowbase"
+
+          {
+            echo "RELEASE_MODE=$RELEASE_MODE"
+            echo "RELEASE_SHA=$RELEASE_SHA"
+            echo "APP_IMAGE=$PREFIX/borrowbase:$RELEASE_SHA"
+            echo "MAINT_IMAGE=$PREFIX/borrowbase-maintenance:$RELEASE_SHA"
+          } >> "$GITHUB_ENV"
+
+      - name: Build application image
+        if: env.RELEASE_MODE == 'release'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --platform linux/amd64 \
+            --target runtime \
+            -t "$APP_IMAGE" .
+
+      - name: Build maintenance image
+        if: env.RELEASE_MODE == 'release'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --platform linux/amd64 \
+            --target build \
+            -t "$MAINT_IMAGE" .
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure Docker authentication
+        if: env.RELEASE_MODE == 'release'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud auth configure-docker \
+            "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Push application and maintenance images
+        if: env.RELEASE_MODE == 'release'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "$APP_IMAGE"
+          docker push "$MAINT_IMAGE"
+
+      - name: Release or restore existing revision
+        shell: bash
+        env:
+          DRY_RUN: "0"
+        run: |
+          set -euo pipefail
+          bash deploy/release.sh "$RELEASE_MODE" "$RELEASE_SHA"
+
+      - name: Smoke test public URL
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SERVICE_URL="$(gcloud run services describe borrowbase \
+            --region="$REGION" \
+            --project="$PROJECT_ID" \
+            --format='value(status.url)')"
+
+          python3 deploy/smoke_test.py "$SERVICE_URL"
+
+      - name: Record workflow result
+        if: ${{ always() }}
+        shell: bash
+        env:
+          JOB_RESULT: ${{ job.status }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          set -euo pipefail
+          case "$SMOKE_OUTCOME" in
+            success) SMOKE_RESULT=PASS ;;
+            failure) SMOKE_RESULT=FAIL ;;
+            *) SMOKE_RESULT="NOT RUN" ;;
+          esac
+          FINAL_STATUS=FAILED
+          if [[ "$JOB_RESULT" == success && "$SMOKE_OUTCOME" == success ]]; then
+            FINAL_STATUS=SUCCESS
+          fi
+
+          {
+            echo
+            echo "## GitHub Actions result"
+            echo
+            echo "- Workflow result: $JOB_RESULT"
+            echo "- Final release status: $FINAL_STATUS"
+            echo "- Smoke test: $SMOKE_RESULT"
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Requested mode: ${RELEASE_MODE:-not validated}"
+            echo "- Requested SHA: ${RELEASE_SHA:-not validated}"
+            echo "- No service-account JSON key was used"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          [[ "$FINAL_STATUS" == SUCCESS ]]
