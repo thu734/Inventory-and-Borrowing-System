@@ -39,4 +39,20 @@ These four cases supplement the supplied cases with ownership isolation, UI quan
 | MT-IUAT-03 - Menu Error Handling and Recovery | FR-02; AC-08 (error/recovery) | Thu Thu Wai / Team MT | 22 Nov 2026 | R1 (reported) | Customer B; browser-local menu API blocking, then unblock/retry | Menu displayed "We couldn't load the menu" and Try again. Unblocking and retrying restored products, prices and availability. | PASS | MT-IUAT-03-E01-E02 |
 | MT-IUAT-04 - Duplicate Menu Item Rejection | FR-03; BR-01/06; AC-11 | Thu Thu Wai / Team MT | 22 Nov 2026 | R1 (reported) | Customer B; duplicate Iced Latte IDs | Request returned 400 INVALID_ORDER; B's history remained empty. Stock remained unchanged based on manual verification. | PASS | MT-IUAT-04-E01 |
 
-**Evidence:** Supporting screenshots for all test cases are included in the Lab 6 report PDF and referenced by their corresponding evidence IDs.
+**Evidence:** Original-case screenshots are in `lab6_partb.pdf`, referenced by the case evidence IDs. Embed the selected readable evidence in the final Lab 6 report PDF.
+
+## D. Separate controlled-exercise retest
+
+The original 12 cases above remain **12 PASS, 0 FAIL, 0 BLOCKED**, with no genuine defect reported during that phase. Team MT's original Sprint 1 ACCEPTED decision was communicated on 23 November 2026, as recorded in the [partner's original UAT register](https://github.com/LaeLaeKaungNyunt/cpe334-campusbite/blob/ad1b922b49464187cc235e68f5baade37a354b3c/docs/labs/lab-06/defect-register.md). The following result belongs only to the later lecturer-authorized exercise.
+
+| Item | Independent record |
+|---|---|
+| Finding / requirement | [CampusBite Issue #45](https://github.com/LaeLaeKaungNyunt/cpe334-campusbite/issues/45); FR-03, BR-01/06, AC-11 / TEST-11 |
+| Original failure | On defective commit `9ee35c08c989e962ec00a9dae9a8a8b99db91e76`, revision `campusbite-staging-00002-pwq`, authenticated `POST /api/v1/orders` with `{"items":[]}` returned 201 and created a PENDING order with no items and total 0; expected 400 INVALID_ORDER. |
+| Corrected version / URL | `488731a85d3348935c272896c1352d5afa331d32`; `campusbite-staging-00003-rss`; https://campusbite-staging-141479751875.asia-southeast1.run.app |
+| Retester / date | Moe Htet Aung / Team MT; 23 November 2026 ICT. Exact execution time was not recorded. |
+| Actions and observations | Counted Customer A's saved orders (3); submitted the empty-item request once; observed HTTP 400 with INVALID_ORDER; refreshed history and counted the same 3 orders. No new order was created. |
+| Outcome / decision | PASS; Team MT recorded ACCEPTED for the corrected staging version. This does not claim Team MT retested production. |
+| Evidence | [Independent retest record and three screenshots](https://github.com/LaeLaeKaungNyunt/cpe334-campusbite/issues/45#issuecomment-7104784685); D-CB-02-E01–E03 in [defect-register.md](defect-register.md). |
+
+Duo L's [correction PR #46](https://github.com/LaeLaeKaungNyunt/cpe334-campusbite/pull/46) reports RED/GREEN and 51/51 tests passing; these are partner developer results, not tests executed by Team MT. Its subsequent reviewed [release PR #47](https://github.com/LaeLaeKaungNyunt/cpe334-campusbite/pull/47) does not expand MT's staging acceptance to production. Correction, review, CI and release references are consolidated in [defect-register.md](defect-register.md).
