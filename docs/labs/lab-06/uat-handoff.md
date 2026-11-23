@@ -7,28 +7,28 @@
 | Course / section | CPE334 Software Engineering / 31 |
 | Product team | Team MT |
 | Project | BorrowBase — Equipment Inventory and Borrowing System (Theme 2) |
-| Members | Moe Htet Aung ; Thu Thu Wai  |
+| Members | Moe Htet Aung (67070503482); Thu Thu Wai (67070503486) |
 | Independent UAT team | Duo L — CampusBite |
-| Independent UAT testers | Lae Lae Kaung Nyunt; Naing Zay Linn  |
+| Independent UAT testers | Lae Lae Kaung Nyunt (67070503481); Naing Zay Linn (67070503484) |
 | Handoff date | 19 November 2026 |
-| Testing window | Pending confirmation — Asia/Bangkok |
+| Recorded UAT dates | 21 November 2026; BB-UAT-06 follow-up on 22 November; acceptance on 23 November (ICT) |
 
-Team MT provides the product, accounts, fixtures and expected behavior. The partner independently executes the cases and records actual results. This package covers Part A; include its complete cases and applicable acceptance criteria in the team's final self-contained Lab 6 PDF. Official submission deadline: 22 November 2026, 23:59 Bangkok.
+This is the historical Part A handoff for Duo L's independent Sprint 1 UAT. A.4 records original fixture states; A.5–A.6 retain the supplied execution instructions. Actual results are summarized in A.7. Include the complete cases and applicable acceptance criteria in the final self-contained Lab 6 PDF.
 
-## A.2 Application version, URL and Sprint 1 scope
+## A.2 Original tested version, URL and Sprint 1 scope
 
 - Application: https://borrowbase-fniy3qjctq-as.a.run.app
 - Repository: https://github.com/thu734/Inventory-and-Borrowing-System
-- Sprint 1 source baseline: 6a0e29154c2b2165c486b0bc8d18e3fd2475b2fc
+- Owner-reported original source baseline: 6a0e29154c2b2165c486b0bc8d18e3fd2475b2fc
 - Cloud Run service: borrowbase
 - Region: asia-southeast1
-- Serving revision: borrowbase-00007-jck
+- Owner-reported original serving revision: borrowbase-00007-jck
 - Traffic: 100%
 - Deployment workflow: Deploy demo #6
 - Deployment status: SUCCESS
 - Verification date: 19 November 2026
 
-Team MT confirms the release used for the session before testing; testers record it in A.7. The source baseline and revision above come from separate source/deployment observations; this document does not assert a newly verified image-to-commit association. Notify the partner before changing the tested release.
+These are historical deployment records, not a claim about the current serving release. Duo L did not independently verify the image-to-commit association. Confirm the release and notify the partner before any future testing or deployment. The later controlled-exercise staging versions are recorded in [defect-register.md](defect-register.md).
 
 | Delivered feature | Requirements / acceptance scope |
 |---|---|
@@ -51,7 +51,7 @@ Acceptance baseline: [SRS](https://github.com/thu734/Inventory-and-Borrowing-Sys
 | UAT-USER-B / B | uat-borrower-b@example.test | BORROWER | d83f13ef-1d40-4a9d-87e3-5b9a81c7b2d6 |
 | UAT-CUSTODIAN / Custodian | custodian@example.test | CUSTODIAN | a20f99f1-db43-4fc3-8426-a228bbbb8d5d |
 
-All three identities exist in the owner's database verification. Before exchange, confirm all three accounts can log in and deliver their credentials privately; successful current login and private delivery have not yet been confirmed in this handoff.
+These accounts were used during original UAT. For a future session, confirm current access and supply credentials privately; no credential values belong in this handoff.
 
 Open the application, enter Email and Password, and select Sign in. Borrowers see Equipment Catalog, My Requests and My Active Loans. Custodians see Equipment Catalog and Custodian Workspace, including Pending, All requests and Refresh records. These sections are on the same page; scroll to their headings.
 
@@ -59,7 +59,7 @@ Use separate browser profiles/contexts for A, B and Custodian; tabs in one profi
 
 ## A.4 Synthetic fixtures and setup/cleanup
 
-The following identifiers and starting states are owner-confirmed from deployed Cloud SQL preparation and read-only verification. They are setup facts, not independent UAT results. Partners locate equipment by assetCode; API calls use Asset.id. Request.id and Loan.id are separate identifiers.
+The following identifiers and starting states are owner-confirmed from deployed Cloud SQL preparation and read-only verification. They describe the original setup, not current database state; subsequent UAT created requests and Loans. Verify fresh eligible fixtures before reruns and preserve the original records. Partners locate equipment by assetCode; API calls use Asset.id. Request.id and Loan.id are separate identifiers.
 
 | Fixture | Actual assetCode | Asset.id | Initial state / use |
 |---|---|---|---|
@@ -75,15 +75,13 @@ The following identifiers and starting states are owner-confirmed from deployed 
 | REQ-D1 | A / ASSET-D | a8f615c3-65cd-4715-9924-da4110c5731b | PENDING; fulfilledAt=NULL; no associated Loan |
 | REQ-D2 | B / ASSET-D | 645e6f94-cf61-4ccd-99b6-1d9650163a6a | PENDING; fulfilledAt=NULL; no associated Loan |
 | REQ-E | A / ASSET-E | 52b7588a-07a7-4e9a-bf22-8a665428caed | PENDING; fulfilledAt=NULL; no associated Loan |
-| REQ-E-B | B / ASSET-E | Pending exact UUID verification | PENDING; additional request created during preparation |
+| REQ-E-B | B / ASSET-E | UUID not recorded; not used by the supplied cases | PENDING; additional request created during preparation |
 
 During Team MT's UAT preparation on 19 November 2026,
 Borrower B created an additional PENDING request for
 ASSET-E (BB-LAP-UAT6-E-001).
 
-The Custodian interface confirmed four pending requests
-across Assets D and E. Both assets remain available and
-have no active Loans displayed.
+At that preparation check, the Custodian interface showed four pending requests across D/E, both assets available and no active Loans for them. This is a historical observation.
 
 For BB-UAT-06 and BB-UAT-07, testers must use Borrower A's
 original REQ-E (52b7588a-07a7-4e9a-bf22-8a665428caed).
@@ -111,7 +109,7 @@ Use the UI for the cases below. Case 05 uses a saved detail-page address to test
 
 ## A.6 Detailed eight UAT cases
 
-Record actual results in A.7; the outcomes below are expectations only. References such as FR-03/04 mean FR-03 and FR-04.
+Original results are summarized in A.7; the outcomes below remain the supplied expectations. References such as FR-03/04 mean FR-03 and FR-04.
 
 ### BB-UAT-01 — Borrower authentication and authorized access
 
@@ -239,24 +237,18 @@ Record actual results in A.7; the outcomes below are expectations only. Referenc
 
 **Expected:** only D1 is fulfilled; D2 remains PENDING and unavailable for checkout while D is loaned. D2 is not automatically fulfilled or cancelled, and exactly one active D Loan exists.
 
-## A.7 Blank results-recording template
+## A.7 Original independent UAT results
 
-Both partner students participate. All fields below are reserved for independent execution; no result is pre-filled.
+[Duo L's complete BorrowBase results and acceptance](https://github.com/LaeLaeKaungNyunt/cpe334-campusbite/blob/ad1b922b49464187cc235e68f5baade37a354b3c/docs/labs/lab-06/uat-results-duol-testing-mt.md) are the independent execution record. Both partner students participated; individual execution times were not recorded.
 
-| Case | Tester / team | Date/time + timezone | Tested SHA / revision | Inputs / generated IDs | PASS / FAIL / BLOCKED | Actual observed result | Evidence |
-|---|---|---|---|---|---|---|---|
-| BB-UAT-01 | | | | | | | |
-| BB-UAT-02 | | | | | | | |
-| BB-UAT-03 | | | | | | | |
-| BB-UAT-04 | | | | | | | |
-| BB-UAT-05 | | | | | | | |
-| BB-UAT-06 | | | | | | | |
-| BB-UAT-07 | | | | | | | |
-| BB-UAT-08 | | | | | | | |
+| Stage / date (ICT) | Verified independent record |
+|---|---|
+| Original supplied cases, 21 November 2026 | BB-UAT-01–08 initially had 7 PASS and 1 BLOCKED. BB-UAT-06's screenshot did not establish the exact FORBIDDEN error code. |
+| Additional verification, 22 November 2026 | Duo L member 3481 repeated BB-UAT-06 using Borrower B's fresh PENDING request `8d13c6b4-1ae4-4410-aa85-110cca365193` on ASSET-A. HTTP 403 FORBIDDEN was observed; the request remained PENDING, asset Available and active Loans unchanged. PASS; no software fix. |
+| Original UAT closure | Eight supplied cases and four partner-designed BB-EX-01–04 cases: **12 PASS, 0 FAIL, 0 BLOCKED**; no genuine finding reported. Preserve the original BLOCKED observation and follow-up evidence. |
+| Independent acceptance, 23 November 2026 | **ACCEPTED**, decided by Duo L for the owner-reported original baseline/revision in A.2; exact decision time not recorded. |
 
-PASS means observed behavior matches the expected results; FAIL means it violates them; BLOCKED means missing access, data or another prerequisite prevents completion. Never copy expected text into Actual observed result or treat BLOCKED as PASS.
-
-Use evidence labels A-UAT-01 through A-UAT-08, with before/after suffixes as needed. Include action, expected/actual result, time and tested revision. Capture readable normal-journey and negative-access observations, including rejection and unchanged state/no disclosure. Redact secrets and unrelated records.
+The later intentional Email-validation defect, correction and staging acceptance are a separate controlled exercise; see [defect-register.md](defect-register.md). They do not retroactively change these original results. Preserve the partner's evidence IDs and screenshots for the final PDF; the source report identifies image/version limitations and an unverified BB-EX-03 follow-up filename.
 
 ## A.8 Defect reporting instructions
 
