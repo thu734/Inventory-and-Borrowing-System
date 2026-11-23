@@ -39,6 +39,22 @@ describe('TEST-F01-09: auth UI states', () => {
     expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
     resolve(reply(session)); expect(await screen.findByRole('heading', { name: 'Welcome, Demo Borrower' })).toBeInTheDocument();
   });
+  it('requires an email before submitting the login form', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValueOnce(reply({}, 401))
+  );
+
+  start();
+
+  await screen.findByRole('heading', { name: 'Sign in' });
+
+  const emailInput = screen.getByLabelText('Email');
+  const passwordInput = screen.getByLabelText('Password');
+
+  expect(emailInput).toBeRequired();
+  expect(passwordInput).toBeRequired();
+});
   it('submits credentials to the real API interface and shows pending state once', async () => {
     let resolve!: (response: Response) => void;
     const fetcher = vi.fn().mockResolvedValueOnce(reply({}, 401)).mockImplementationOnce(() => new Promise<Response>(done => { resolve = done; }));
