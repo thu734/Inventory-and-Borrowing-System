@@ -61,3 +61,30 @@ Every sprint preserves the SRS-to-feature-to-verification traceability. Completi
 - Borrowing history and inventory reporting enforce the required scopes and reconcile with persisted state.
 - Full regression, accessibility, security, performance and safe-error checks are recorded.
 - The final deliverable is reproducible from a clean checkout and ready for final review.
+
+## 5. Sprint 2 implementation plan
+
+Status: planning baseline authored by Member 6; teammate review required before implementation. Q-03 and Q-04 are selected proposals pending formal teammate confirmation. Implementation ownership and reviewers remain unassigned until work is ready.
+
+| Feature | Scope | Dependencies | Readiness |
+|---|---|---|---|
+| F-05 | One-time Custodian returns and availability recomputation | F-04, SYS-01 | Contract review and implementation ownership pending |
+| F-06 | Fixed due dates, overdue state and S1 Loan backfill | F-04, F-05 lifecycle, Q-03, SYS-01 | Q-03 confirmation and implementation ownership pending |
+| F-07 | Custodian model/Asset administration | F-01, F-02, F-04, Q-04 | Q-04 confirmation and implementation ownership pending |
+| F-08 | Asset/model search and category/availability filters | F-01, F-02, Q-04 | Contract review and implementation ownership pending |
+
+F-05 and F-07 may proceed in parallel after contract review. F-06 contract and migration design may proceed in parallel with F-05, but Loan schema changes must be coordinated. F-08 can extend the existing catalog query independently and must be regression-tested after F-07 changes inventory data.
+
+### Contract-first workflow and gates
+
+1. Approve Q-03 and Q-04.
+2. Review F-05–F-08 contracts and STS.
+3. Agree implementation ownership when each feature is ready; ownership is not part of this baseline.
+4. Create one Issue and feature branch per feature when implementation begins.
+5. Implement domain/API/database tests before completing UI work.
+6. Add UI validation, status feedback and committed-state refresh.
+7. Require linked PR, substantive teammate review and passing CI.
+8. Integrate into `sprint2-staging` only after F-01–F-04 regression.
+9. Promote the reviewed release to `main` after migration, smoke, persistence and release-readiness checks.
+
+Sprint 2 completion requires executed acceptance evidence, unit/API/UI/PostgreSQL regression, typecheck, build, CI, review and release traceability. Lab 7 request cancellation remains a separate proposed change awaiting TA approval and is not part of this plan.
