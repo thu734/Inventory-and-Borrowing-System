@@ -13,7 +13,7 @@ describe('F-03 initial contract regression (original red assertions)', () => {
   const store = new MemoryAuthStore();
   const auth = createApp({ store, origin,
     csrfSecret: 'draft-test-only-csrf-secret-at-least-32-bytes', secureCookies: false });
-  const queries: BorrowingStore = { create: async () => { throw new Error('Not used'); }, requests: async () => [],
+  const queries: BorrowingStore = { create: async () => { throw new Error('Not used'); }, cancel: async () => { throw new Error('Not used'); }, requests: async () => [],
     request: async () => null, loans: async () => [], loan: async () => null };
   mountBorrowingRoutes(auth, queries);
   const app = finishApp(auth.app);

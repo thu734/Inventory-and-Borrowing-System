@@ -21,6 +21,7 @@ const assetId = '41f81203-9156-4be0-8488-e72fdc734301';
 const loanId = '51f81203-9156-4be0-8488-e72fdc734301';
 
 const pendingRequest: CustodianRequestDTO = {
+  cancelledAt: null,
   id: requestId,
   borrower: {
     id: 'borrower-1',

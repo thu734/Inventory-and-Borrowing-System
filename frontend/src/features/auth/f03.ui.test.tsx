@@ -47,6 +47,29 @@ function start(
 }
 
 describe('F-03 Borrower UI',()=>{
+  it('confirms cancellation, prevents duplicate submission and refreshes the request history', async () => {
+    let resolve!: (r: Response) => void;
+    const cancelled = { ...record, status: 'CANCELLED', cancelledAt: '2026-11-25T10:00:00Z' };
+    const fetcher = start([async () => reply({items:[record]}), () => new Promise(done => { resolve = done; }), async () => reply({items:[cancelled]})]);
+    fireEvent.click(await screen.findByRole('button', {name:'My Requests'}));
+    fireEvent.click(await screen.findByRole('button', {name:'Cancel request'}));
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', {name:'Confirm cancellation'}));
+    expect(screen.getByRole('button', {name:'Cancelling…'})).toBeDisabled();
+    expect(fetcher.mock.calls[2][0]).toBe(`/api/v1/me/borrow-requests/${record.id}/cancel`);
+    expect(JSON.parse(fetcher.mock.calls[2][1].body)).toEqual({});
+    resolve(reply(cancelled));
+    expect(await screen.findByText('CANCELLED')).toBeInTheDocument();
+    expect(screen.queryByRole('button', {name:'Cancel request'})).not.toBeInTheDocument();
+  });
+  it('shows cancellation errors and offers refresh', async () => {
+    start([async () => reply({items:[record]}), async () => reply('Request is no longer pending.', 409)]);
+    fireEvent.click(await screen.findByRole('button', {name:'My Requests'}));
+    fireEvent.click(await screen.findByRole('button', {name:'Cancel request'}));
+    fireEvent.click(screen.getByRole('button', {name:'Confirm cancellation'}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('no longer pending');
+    expect(screen.getByRole('button', {name:'Refresh requests'})).toBeInTheDocument();
+  });
   it('UI-01 own requests has loading and empty states',async()=>{
     let resolve!:(r:Response)=>void;
     start([()=>new Promise(done=>{resolve=done;})]);

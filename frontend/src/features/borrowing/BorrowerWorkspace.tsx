@@ -5,7 +5,7 @@ import './borrowing.css';
 
 export interface SelectedAsset { assetId: string; assetCode?: string; modelName?: string; category?: string }
 interface Asset { id: string; assetCode: string; modelName: string; category: string }
-interface OwnRecord { id: string; asset: Asset; status?: 'PENDING' | 'FULFILLED'; createdAt?: string; checkedOutAt?: string }
+interface OwnRecord { id: string; asset: Asset; status?: 'PENDING' | 'FULFILLED' | 'CANCELLED'; createdAt?: string; checkedOutAt?: string; cancelledAt?: string | null }
 type View = { kind: 'home' | 'request' | 'requests' | 'loans' | 'request-detail' | 'loan-detail'; id?: string };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -41,10 +41,14 @@ export function BorrowerWorkspace() {
   const [uncertain, setUncertain] = useState(false);
   const [saved, setSaved] = useState<OwnRecord | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+  const cancelFlight = useRef(false);
   const inFlight = useRef(false);
   const submissionVersion = useRef(0);
   useEffect(() => {
-    const change = () => { submissionVersion.current++; setView(initialView()); setSelected(selection()); setError(''); setSaved(null); setUncertain(false); };
+    const change = () => { submissionVersion.current++; setView(initialView()); setSelected(selection()); setError(''); setSaved(null); setUncertain(false); setConfirmId(null); setCancelError(''); };
     window.addEventListener('hashchange', change);
     return () => { submissionVersion.current++; window.removeEventListener('hashchange', change); };
   }, []);
@@ -81,6 +85,29 @@ export function BorrowerWorkspace() {
       setError(`${denied(e)}${unknown ? ' Check My Requests before submitting again; the outcome could not be confirmed.' : ''}`);
     } finally { inFlight.current = false; setBusy(false); }
   }
+  async function cancelRequest(id: string) {
+    if (cancelFlight.current) return;
+    cancelFlight.current = true; setCancelBusy(true); setCancelError('');
+    const version = submissionVersion.current;
+    try {
+      await request<OwnRecord>(`/me/borrow-requests/${encodeURIComponent(id)}/cancel`, { body: {}, csrf: session?.csrfToken });
+      if (version === submissionVersion.current) { setConfirmId(null); navigate('requests'); }
+    } catch (e) {
+      if (version === submissionVersion.current) {
+        const unknown = e instanceof ApiError && (e.status === 0 || e.status >= 500);
+        setCancelError(`${denied(e)}${unknown ? ' The outcome could not be confirmed; refresh your requests before trying again.' : ''}`);
+        if (unknown) setConfirmId(null);
+      }
+    } finally { cancelFlight.current = false; setCancelBusy(false); }
+  }
+  function cancelControls(row: OwnRecord) {
+    if (row.status !== 'PENDING') return null;
+    return confirmId === row.id ? <div>
+      <p>Cancel this borrowing request?</p>
+      <button disabled={cancelBusy} onClick={() => void cancelRequest(row.id)}>{cancelBusy ? 'Cancelling…' : 'Confirm cancellation'}</button>
+      <button disabled={cancelBusy} onClick={() => setConfirmId(null)}>Keep request</button>
+    </div> : <button disabled={cancelBusy || !!cancelError} onClick={() => { setCancelError(''); setConfirmId(row.id); }}>Cancel request</button>;
+  }
   const list = view.kind === 'requests' || view.kind === 'loans';
   const isRequest = view.kind.startsWith('request');
   return <section className="borrowing" aria-label="Your borrowing records">
@@ -104,13 +131,18 @@ export function BorrowerWorkspace() {
     {!list && view.kind.endsWith('-detail') && <h2>{isRequest ? 'Request detail' : 'Active Loan detail'}</h2>}
     {loading && <p role="status">Loading your records…</p>}
     {error && <div><p role="alert" className="error">{error}</p>{view.kind !== 'request' && <button onClick={() => setAttempt(n => n + 1)}>Try again</button>}</div>}
+    {cancelError && <div><p role="alert" className="error">{cancelError}</p><button onClick={() => { setCancelError(''); setConfirmId(null); setAttempt(n => n + 1); }}>Refresh requests</button></div>}
     {!loading && !error && list && (items.length ? <ul className="record-list">{items.map(row => <li key={row.id}>
       <button onClick={() => navigate(isRequest ? 'requests' : 'loans', row.id)}>{row.asset.assetCode} — {row.asset.modelName}</button>
       <span>{row.status ?? 'Active Loan'}</span>
+      {row.cancelledAt && <span>Cancelled: <time dateTime={row.cancelledAt}>{new Date(row.cancelledAt).toLocaleString()}</time></span>}
+      {isRequest && cancelControls(row)}
     </li>)}</ul> : <p>{isRequest ? 'No requests yet.' : 'No active Loans.'}</p>)}
     {!loading && !error && detail && <div className="record-detail">
       <p>{detail.asset.assetCode} — {detail.asset.modelName}</p><p>{detail.asset.category}</p>
       {detail.status && <p>{detail.status}</p>}
+      {detail.cancelledAt && <p>Cancelled: <time dateTime={detail.cancelledAt}>{new Date(detail.cancelledAt).toLocaleString()}</time></p>}
+      {isRequest && cancelControls(detail)}
       <p>{isRequest ? 'Requested' : 'Checked out'}: <time dateTime={detail.createdAt ?? detail.checkedOutAt}>{new Date(detail.createdAt ?? detail.checkedOutAt ?? '').toLocaleString()}</time></p>
       <p className="record-id">Record: {detail.id}</p>
       <button onClick={() => navigate(isRequest ? 'requests' : 'loans')}>Back to list</button>
