@@ -45,4 +45,10 @@ describe('F-03 initial contract regression (original red assertions)', () => {
     expect(response.status).toBe(200);
     expect(Array.isArray(response.body.data.items)).toBe(true);
   });
+
+  it('TEST-F03-11: anonymous cancellation requires authentication', async () => {
+    const response = await request(app).post('/api/v1/me/borrow-requests/31f81203-9156-4be0-8488-e72fdc734301/cancel')
+      .set('Origin', origin).send({});
+    expect(response.status).toBe(401);
+  });
 });
