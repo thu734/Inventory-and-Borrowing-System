@@ -10,7 +10,7 @@ Dependencies: F-05 returned Loans, F-06 due dates, SYS-01 references and existin
 
 ## Feature SDS and contract
 
-F-09 exposes completed Loans separately from F-04 active Loans. Borrowers retrieve only their own returned Loans. Custodians retrieve returned Loans within the approved department scope. Records include Asset, checkout, due, return and responsible-Custodian fields. No history mutation is provided.
+F-09 exposes completed Loans separately from F-04 active Loans. Borrowers retrieve only their own returned Loans. Custodians retrieve returned Loans within the approved department scope. Records include Asset, checkout, due, return, derived `returnedLate` (`returnedAt > dueAt`) and responsible-Custodian fields. F-06 supplies the due/returnedLate data but introduces no Sprint 2 completed-loan history screen. No history mutation is provided.
 
 Proposed read routes: `GET /api/v1/borrower/loans/history` and `GET /api/v1/custodian/loans/history`, following existing route and response conventions. The UI provides a history section with identity, timestamps, clear empty state and safe error/retry behavior.
 

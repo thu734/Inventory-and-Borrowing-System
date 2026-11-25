@@ -47,7 +47,7 @@ UI clear/reset returns to no-query results. Valid no-match queries return 200 wi
 | TEST-F08-04 | API/UI | Valid no-match query | 200 empty list and explicit empty state. |
 | TEST-F08-05 | API | Unknown key, `available=yes`, 121-char q | 400 safe error; no write. |
 | TEST-F08-06 | Integration/PostgreSQL | Checkout/return/serviceability then same query | Current committed availability is returned. |
-| TEST-F08-07 | API | No-query list, detail with query, equal-code fixtures | No-query compatibility, detail rejection, assetCode/id order. |
+| TEST-F08-07 | API | No-query list, detail with query, distinct asset-code fixtures | No-query compatibility, detail rejection, assetCode ASC then id ASC order. |
 | TEST-F08-08 | UI | Loading/no-match/reset/outage/narrow keyboard view | Accessible recovery and refresh. |
 | TEST-F08-09 | Regression | F-01–F-07 suites | Existing behavior passes. |
 

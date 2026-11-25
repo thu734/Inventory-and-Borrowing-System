@@ -87,4 +87,4 @@ F-05 and F-07 may proceed in parallel after contract review. F-06 contract and m
 8. Integrate into `sprint2-staging` only after F-01–F-04 regression.
 9. Promote the reviewed release to `main` after migration, smoke, persistence and release-readiness checks.
 
-Sprint 2 completion requires executed acceptance evidence, unit/API/UI/PostgreSQL regression, typecheck, build, CI, review and release traceability. Lab 7 request cancellation remains a separate proposed change awaiting TA approval and is not part of this plan.
+Sprint 2 completion requires executed acceptance evidence, unit/API/UI/PostgreSQL regression, typecheck, build, CI, review and release traceability. Lab 7 request cancellation is a separate change: Issue #71 received TA approval and contract PR #74 was reviewed and merged into `lab7-staging` at baseline commit `ac00bae`. Its implementation is separate from Sprint 2 and is not claimed completed here.

@@ -10,7 +10,7 @@ Dependencies: F-05 returns, F-06 due/overdue, F-07 inventory, SYS-01 persistence
 
 ## Feature SDS and contract
 
-A Custodian retrieves read-only inventory summaries from one consistent persisted-data snapshot. The report includes totals by category and serviceability, available Assets, active Loans and overdue active Loans. Proposed Q-04 semantics are that serviceability partitions inventory, available and active-loan counts may overlap because unsuitable Assets may be loaned, and overdue is a subset of active Loans. These semantics require approval.
+A Custodian retrieves read-only inventory summaries from one consistent persisted-data snapshot. The report includes totals by category and serviceability, available Assets, active Loans and overdue active Loans. Proposed Q-04 semantics are that serviceability partitions inventory, available and active-loan counts may overlap because unsuitable Assets may be loaned, and overdue is a subset of active Loans. Reporting preserves the immutable, non-reused Asset-code identity recorded by F-07; it does not rewrite historical codes. These semantics require approval.
 
 Proposed route: `GET /api/v1/custodian/reports/inventory`. The server derives Custodian scope. A compact summary table is sufficient; a dashboard is not required.
 
