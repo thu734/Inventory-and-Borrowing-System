@@ -58,7 +58,7 @@ All routes use `/api/v1`, JSON and the shared F-01 session, Origin/CSRF and safe
 
 | Method/path | Required access | Required result |
 |---|---|---|
-| `GET /api/v1/custodian/borrow-requests` | Authenticated Custodian; optional `status=PENDING\|FULFILLED` only | `200 {data:{items:BorrowRequestDTO[]}}`, ordered by `createdAt` descending then `id` descending; no filter returns all statuses and no matches return `items:[]` |
+| `GET /api/v1/custodian/borrow-requests` | Authenticated Custodian; optional `status=PENDING\|FULFILLED\|CANCELLED` only | `200 {data:{items:BorrowRequestDTO[]}}`, ordered by `createdAt` descending then `id` descending; no filter returns all statuses and no matches return `items:[]` |
 | `GET /api/v1/custodian/borrow-requests/:id` | Authenticated Custodian | `200 {data:BorrowRequestDTO}` for any status; missing ID returns `404 NOT_FOUND` |
 | `GET /api/v1/custodian/loans` | Authenticated Custodian; no query parameters | `200 {data:{items:ActiveLoanDTO[]}}`, ordered by `checkedOutAt` descending then `id` descending; no active loans return `items:[]` |
 | `POST /api/v1/custodian/borrow-requests/:id/checkout` | Authenticated Custodian with valid Origin/CSRF | `201 {data:{request:BorrowRequestDTO,loan:ActiveLoanDTO}}`; the selected request is `FULFILLED` and the Loan is active |
@@ -69,9 +69,10 @@ All routes use `/api/v1`, JSON and the shared F-01 session, Origin/CSRF and safe
 {
   id: string,              // UUID
   borrower: { id: string, displayName: string },
-  status: "PENDING" | "FULFILLED",
+  status: "PENDING" | "FULFILLED" | "CANCELLED",
   createdAt: string,      // UTC ISO 8601
   fulfilledAt: string | null,
+  cancelledAt: string | null,
   asset: AssetDTO
 }
 ```
@@ -130,7 +131,7 @@ Within one PostgreSQL transaction, checkout must:
 
 | AC ID | Observable outcome | Test ID and expected outcome |
 |---|---|---|
-| AC-F04-01 | A valid active Custodian lists and retrieves department requests of any status; the optional `status=PENDING` filter returns only the checkout queue, with deterministic order and `items:[]` when empty. | TEST-F04-01: Real API/PostgreSQL role, DTO, ordering, all-status and filter checks pass. |
+| AC-F04-01 | A valid active Custodian lists and retrieves department requests of any status; the optional `status=PENDING\|FULFILLED\|CANCELLED` filter returns only that status, with deterministic order and `items:[]` when empty. | TEST-F04-01: Real API/PostgreSQL role, DTO, ordering, all-status and filter checks pass. |
 | AC-F04-02 | Borrower, unauthenticated and inactive/revoked sessions cannot access Custodian operations. | TEST-F04-02: Authorization matrix returns the contract status and no private data. |
 | AC-F04-03 | A valid eligible `PENDING` request returns `201` with the specified fulfilled `BorrowRequestDTO` and matching active `ActiveLoanDTO`. | TEST-F04-03: PostgreSQL checkout assertions match response DTOs, request, Borrower and Asset. |
 | AC-F04-04 | Checkout rejects maintenance, retired or already-loaned Assets without partial request/Loan changes. | TEST-F04-04: State matrix and rollback assertions pass. |
@@ -148,7 +149,7 @@ The following cases specify F-04 verification; executed results and remaining co
 
 | Test ID / AC | Test Level | Preconditions | Action | Expected Result |
 |---|---|---|---|---|
-| TEST-F04-01 / AC-F04-01 | API and PostgreSQL integration | Active Custodian session; multiple department requests in PENDING and FULFILLED states | Call GET /api/v1/custodian/borrow-requests with and without status=PENDING, then retrieve one request by ID | Return correct DTOs, deterministic ordering and only matching records when filtered. An empty result returns items=[]. |
+| TEST-F04-01 / AC-F04-01 | API and PostgreSQL integration | Active Custodian session; department requests in PENDING, FULFILLED and CANCELLED states | Call GET /api/v1/custodian/borrow-requests with and without each supported status filter, then retrieve one request by ID | Return correct DTOs including cancelledAt, deterministic ordering and only matching records when filtered. An empty result returns items=[]. |
 | TEST-F04-02 / AC-F04-02 | API security integration | Active Borrower, valid Custodian, missing session and inactive/revoked session | Attempt Custodian GET and POST operations using each session | Only active Custodian is authorized. Unauthenticated requests return 401; Borrower requests return 403. No private checkout data is exposed. |
 | TEST-F04-03 / AC-F04-03 | API and PostgreSQL integration | Serviceable Asset with no active Loan; valid PENDING request; active Custodian | POST /api/v1/custodian/borrow-requests/:id/checkout | Return 201 with fulfilled request and active Loan. Persist status=FULFILLED, fulfilledAt and matching borrowerId, assetId, borrowRequestId and checkedOutById. |
 | TEST-F04-04 / AC-F04-04 | Unit and PostgreSQL integration | PENDING requests for MAINTENANCE, RETIRED and already-loaned Assets | Attempt checkout for each unavailable Asset | Reject checkout with 409 ASSET_UNAVAILABLE. Request remains PENDING, and no new Loan or partial changes are committed. |
@@ -196,3 +197,24 @@ No test is considered passed until it has actually been executed. Failed and ski
 |---|---|
 | 1.0 | Initial Sprint 1 engineering contract. |
 | 1.1 | Clarified proposed Q-02 policy, expanded STS, refined checkout transaction sequence and strengthened Definition of Done. |
+| 1.2 | Approved Lab 7 Issue #71 cancellation/checkout impact and atomic race coverage. Reviewer pending. |
+
+## Lab 7 contract revision — Issue #71 (25 November 2026)
+
+TA approval: **P’ Tik**, **November 25, 2026**; the original email is not attached or independently inspected here. Status: **pending teammate review**. Checkout rejects `CANCELLED` requests with `409 REQUEST_NOT_PENDING`. Cancellation must: read the request to identify its Asset; begin a transaction; lock the Asset first; lock and re-read the BorrowRequest; verify the request still belongs to that Asset and is PENDING and the authenticated actor owns it; conditionally transition it to CANCELLED and persist cancelledAt; then commit. Checkout uses the same Asset-first/request-recheck order. If cancellation wins, checkout returns 409 without a Loan; if checkout wins, cancellation returns 409 without changing the FULFILLED request, fulfilledAt or Loan. Existing active-Loan uniqueness, availability, Custodian authorization, borrower/asset derivation and rollback rules remain unchanged.
+
+| AC | Expected behavior | STS |
+|---|---|---|
+| AC-F04-10 | CANCELLED checkout rejected; request, Loan and Asset unchanged. | TEST-F04-10 |
+| AC-F04-11 | Checkout atomically revalidates/locks request state. | TEST-F04-11 |
+| AC-F04-12 | Anonymous, Borrower, inactive and invalid sessions cannot checkout. | TEST-F04-12 |
+| AC-F04-13 | Concurrent cancellation/checkout has exactly one winner and no partial loser state. | TEST-F04-13; TEST-F03-16 |
+
+| Test ID / AC | Level | Preconditions | Input/action | Expected result and database assertions |
+|---|---|---|---|---|
+| TEST-F04-10 / AC-F04-10 | API/PostgreSQL | CANCELLED request with no Loan | POST checkout | 409 REQUEST_NOT_PENDING; request remains CANCELLED with unchanged cancelledAt; zero Loan/Asset changes. |
+| TEST-F04-11 / AC-F04-11 | PostgreSQL transaction | PENDING request and serviceable Asset | Exercise checkout and inspect ordering/revalidation | Asset locks before request; stale relationship/status is rejected; request/Loan changes commit together or roll back together. |
+| TEST-F04-12 / AC-F04-12 | API security | Anonymous, Borrower, inactive/revoked and valid Custodian sessions | Attempt checkout | Existing 401/403 matrix; no private data or writes on rejection. |
+| TEST-F04-13 / AC-F04-13 | Barrier-controlled PostgreSQL | One PENDING request; valid owner cancellation and Custodian checkout | Execute both transactions concurrently | Exactly one succeeds: CANCELLED with cancelledAt/no Loan or FULFILLED with fulfilledAt/one active Loan. Loser returns 409 and cannot alter winner state. |
+
+Revision metadata: previous F-04 version **1.1**; revised version **1.2**; revision date **November 25, 2026**; reason **Approved Lab 7 request-lifecycle change, Issue #71**; TA approval **P’ Tik**; reviewer **Pending**; implementation **Not started**; review status **Pending teammate review**.
