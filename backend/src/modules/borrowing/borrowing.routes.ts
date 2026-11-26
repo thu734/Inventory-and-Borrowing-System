@@ -22,6 +22,14 @@ export function mountBorrowingRoutes(auth: ReturnType<typeof createApp>, store: 
         res.location(`${base}/me/borrow-requests/${saved.id}`).status(201).json({ data: saved });
       } catch (error) { next(error); }
     });
+  auth.app.post(`${base}/me/borrow-requests/:id/cancel`, ...guards, auth.requireOrigin, auth.requireCsrf,
+    noQuery, json, express.json({ limit: '16kb', strict: true }), async (req, res, next) => {
+      try {
+        const parsedId = id.safeParse(req.params.id);
+        if (!parsedId.success || !z.strictObject({}).safeParse(req.body).success) throw new ApiError(400, 'INVALID_INPUT', 'A valid request ID and an empty JSON object are required.');
+        res.json({ data: await store.cancel(owner(res), parsedId.data) });
+      } catch (error) { next(error); }
+    });
   for (const [path, list, detail] of [
     ['borrow-requests', store.requests.bind(store), store.request.bind(store)],
     ['loans', store.loans.bind(store), store.loan.bind(store)],

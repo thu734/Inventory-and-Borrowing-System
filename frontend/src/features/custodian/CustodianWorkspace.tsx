@@ -4,7 +4,7 @@ import { ApiError, request } from '../../lib/api-client';
 import { useAuth } from '../auth/AuthProvider';
 import './custodian.css';
 
-type RequestStatus = 'PENDING' | 'FULFILLED';
+type RequestStatus = 'PENDING' | 'FULFILLED' | 'CANCELLED';
 
 interface CustodianAsset {
   id: string;
@@ -317,9 +317,7 @@ export function CustodianWorkspace() {
 
                     <span
                       className={
-                        item.status === 'PENDING'
-                          ? 'custodian-status pending'
-                          : 'custodian-status fulfilled'
+                        `custodian-status ${item.status.toLowerCase()}`
                       }
                     >
                       {item.status}

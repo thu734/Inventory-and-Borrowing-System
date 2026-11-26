@@ -2,23 +2,24 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { ApiError } from '../../app.ts';
 
 export interface AssetDTO { id: string; assetCode: string; modelName: string; category: string }
-export interface RequestDTO { id: string; status: 'PENDING' | 'FULFILLED'; createdAt: string; asset: AssetDTO }
+export interface RequestDTO { id: string; status: 'PENDING' | 'FULFILLED' | 'CANCELLED'; createdAt: string; cancelledAt: string | null; asset: AssetDTO }
 export interface ActiveLoanDTO { id: string; borrowRequestId: string; checkedOutAt: string; asset: AssetDTO }
 export interface BorrowingStore {
   create(borrowerId: string, assetId: string): Promise<RequestDTO>;
+  cancel(borrowerId: string, id: string): Promise<RequestDTO>;
   requests(borrowerId: string): Promise<RequestDTO[]>;
   request(borrowerId: string, id: string): Promise<RequestDTO | null>;
   loans(borrowerId: string): Promise<ActiveLoanDTO[]>;
   loan(borrowerId: string, id: string): Promise<ActiveLoanDTO | null>;
 }
 const assetSelect = { id: true, assetCode: true, equipmentModel: { select: { name: true, category: true } } } as const;
-const requestSelect = { id: true, status: true, createdAt: true, asset: { select: assetSelect } } as const;
+const requestSelect = { id: true, status: true, createdAt: true, cancelledAt: true, asset: { select: assetSelect } } as const;
 const loanSelect = { id: true, borrowRequestId: true, checkedOutAt: true, asset: { select: assetSelect } } as const;
 type RequestRow = Prisma.BorrowRequestGetPayload<{ select: typeof requestSelect }>;
 type LoanRow = Prisma.LoanGetPayload<{ select: typeof loanSelect }>;
 const assetDTO = (a: RequestRow['asset']): AssetDTO => ({ id: a.id, assetCode: a.assetCode,
   modelName: a.equipmentModel.name, category: a.equipmentModel.category });
-const requestDTO = (r: RequestRow): RequestDTO => ({ id: r.id, status: r.status, createdAt: r.createdAt.toISOString(), asset: assetDTO(r.asset) });
+const requestDTO = (r: RequestRow): RequestDTO => ({ id: r.id, status: r.status, createdAt: r.createdAt.toISOString(), cancelledAt: r.cancelledAt?.toISOString() ?? null, asset: assetDTO(r.asset) });
 const loanDTO = (r: LoanRow): ActiveLoanDTO => ({ id: r.id, borrowRequestId: r.borrowRequestId,
   checkedOutAt: r.checkedOutAt.toISOString(), asset: assetDTO(r.asset) });
 const duplicate = () => new ApiError(409, 'DUPLICATE_PENDING_REQUEST', 'You already have a pending request for this asset.');
@@ -26,6 +27,21 @@ const duplicate = () => new ApiError(409, 'DUPLICATE_PENDING_REQUEST', 'You alre
 export class PrismaBorrowingStore implements BorrowingStore {
   private readonly db: PrismaClient;
   constructor(db: PrismaClient) { this.db = db; }
+  async cancel(borrowerId: string, id: string) {
+    return this.db.$transaction(async tx => {
+      const initial = await tx.borrowRequest.findFirst({ where: { id, borrowerId }, select: { assetId: true } });
+      if (!initial) throw new ApiError(404, 'NOT_FOUND', 'Resource not found.');
+      await tx.$queryRaw`SELECT "id" FROM "Asset" WHERE "id" = ${initial.assetId} FOR UPDATE`;
+      const rows = await tx.$queryRaw<{ assetId: string; borrowerId: string; status: string }[]>`
+        SELECT "assetId", "borrowerId", "status" FROM "BorrowRequest" WHERE "id" = ${id} FOR UPDATE`;
+      const current = rows[0];
+      if (!current || current.borrowerId !== borrowerId) throw new ApiError(404, 'NOT_FOUND', 'Resource not found.');
+      if (current.assetId !== initial.assetId || current.status !== 'PENDING') throw new ApiError(409, 'REQUEST_NOT_PENDING', 'Request is no longer pending.');
+      const changed = await tx.borrowRequest.updateMany({ where: { id, borrowerId, assetId: initial.assetId, status: 'PENDING' }, data: { status: 'CANCELLED', cancelledAt: new Date() } });
+      if (changed.count !== 1) throw new ApiError(409, 'REQUEST_NOT_PENDING', 'Request is no longer pending.');
+      return requestDTO(await tx.borrowRequest.findUniqueOrThrow({ where: { id }, select: requestSelect }));
+    });
+  }
   async create(borrowerId: string, assetId: string) {
     try {
       return await this.db.$transaction(async tx => {

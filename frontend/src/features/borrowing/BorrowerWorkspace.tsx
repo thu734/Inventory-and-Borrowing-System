@@ -5,7 +5,7 @@ import './borrowing.css';
 
 export interface SelectedAsset { assetId: string; assetCode?: string; modelName?: string; category?: string }
 interface Asset { id: string; assetCode: string; modelName: string; category: string }
-interface OwnRecord { id: string; asset: Asset; status?: 'PENDING' | 'FULFILLED'; createdAt?: string; checkedOutAt?: string }
+interface OwnRecord { id: string; asset: Asset; status?: 'PENDING' | 'FULFILLED' | 'CANCELLED'; createdAt?: string; checkedOutAt?: string; cancelledAt?: string | null }
 type View = { kind: 'home' | 'request' | 'requests' | 'loans' | 'request-detail' | 'loan-detail'; id?: string };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -41,10 +41,39 @@ export function BorrowerWorkspace() {
   const [uncertain, setUncertain] = useState(false);
   const [saved, setSaved] = useState<OwnRecord | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+  const [cancelNotice, setCancelNotice] = useState('');
+  const confirmationHeading = useRef<HTMLHeadingElement>(null);
+  const cancellationStatus = useRef<HTMLParagraphElement>(null);
+  const refreshRequests = useRef<HTMLButtonElement>(null);
+  const recordsHeading = useRef<HTMLHeadingElement>(null);
+  const cancelTriggers = useRef(new Map<string, HTMLButtonElement>());
+  const focusRequest = useRef<'confirmation' | 'trigger' | 'status' | 'refresh' | 'records' | null>(null);
+  const triggerId = useRef<string | null>(null);
+  const successNavigation = useRef<string | null>(null);
+  const cancelFlight = useRef(false);
+  // Resolve focus only after React has committed the replacement controls.
+  useEffect(() => {
+    const target = focusRequest.current;
+    if (!target || (target === 'records' && loading)) return;
+    const element = target === 'confirmation' ? confirmationHeading.current
+      : target === 'trigger' ? cancelTriggers.current.get(triggerId.current ?? '')
+      : target === 'status' ? cancellationStatus.current
+      : target === 'refresh' ? refreshRequests.current : recordsHeading.current;
+    if (element?.isConnected && !(element instanceof HTMLButtonElement && element.disabled)) {
+      element.focus();
+      focusRequest.current = null;
+    }
+  });
   const inFlight = useRef(false);
   const submissionVersion = useRef(0);
   useEffect(() => {
-    const change = () => { submissionVersion.current++; setView(initialView()); setSelected(selection()); setError(''); setSaved(null); setUncertain(false); };
+    const change = () => { submissionVersion.current++; setView(initialView()); setSelected(selection()); setError(''); setSaved(null); setUncertain(false); setConfirmId(null); setCancelError('');
+      if (successNavigation.current !== window.location.hash) { setCancelNotice(''); focusRequest.current = null; }
+      successNavigation.current = null;
+    };
     window.addEventListener('hashchange', change);
     return () => { submissionVersion.current++; window.removeEventListener('hashchange', change); };
   }, []);
@@ -81,6 +110,54 @@ export function BorrowerWorkspace() {
       setError(`${denied(e)}${unknown ? ' Check My Requests before submitting again; the outcome could not be confirmed.' : ''}`);
     } finally { inFlight.current = false; setBusy(false); }
   }
+  async function cancelRequest(row: OwnRecord) {
+    if (cancelFlight.current) return;
+    cancelFlight.current = true; setCancelBusy(true); setCancelError('');
+    setCancelNotice(`Cancelling request for ${row.asset.assetCode}…`);
+    focusRequest.current = 'status';
+    const version = submissionVersion.current;
+    try {
+      const cancelled = await request<OwnRecord>(`/me/borrow-requests/${encodeURIComponent(row.id)}/cancel`, { body: {}, csrf: session?.csrfToken });
+      if (version === submissionVersion.current) {
+        // Remove stale pending actions immediately, even while history reloads.
+        setItems(current => current.map(item => item.id === row.id ? cancelled : item));
+        setDetail(current => current?.id === row.id ? cancelled : current);
+        setConfirmId(null);
+        setCancelNotice(`Request for ${row.asset.assetCode} has been cancelled. Its history has been kept.`);
+        focusRequest.current = 'status';
+        successNavigation.current = window.location.hash !== '#requests' ? '#requests' : null;
+        navigate('requests');
+      }
+    } catch (e) {
+      if (version === submissionVersion.current) {
+        const unknown = e instanceof ApiError && (e.status === 0 || e.status >= 500);
+        setCancelError(`${denied(e)}${unknown ? ' The outcome could not be confirmed; refresh your requests before trying again.' : ''}`);
+        setCancelNotice('');
+        setConfirmId(null);
+        focusRequest.current = 'refresh';
+      }
+    } finally { cancelFlight.current = false; setCancelBusy(false); }
+  }
+  function cancelControls(row: OwnRecord) {
+    if (row.status !== 'PENDING') return null;
+    return confirmId === row.id ? <section className="cancellation-confirmation" role="group"
+      aria-labelledby={`cancel-title-${row.id}`} aria-describedby={`cancel-description-${row.id}`} aria-busy={cancelBusy}>
+      <h3 id={`cancel-title-${row.id}`} ref={confirmationHeading} tabIndex={-1}>Cancel request for {row.asset.assetCode}?</h3>
+      <p id={`cancel-description-${row.id}`}>This ends your pending request. The request and its history will be kept.</p>
+      <div className="cancellation-actions">
+        <button type="button" className="cancellation-keep" disabled={cancelBusy} onClick={() => {
+          triggerId.current = row.id; focusRequest.current = 'trigger'; setConfirmId(null);
+        }}>Keep request</button>
+        <button type="button" className="cancellation-destructive" disabled={cancelBusy} onClick={() => void cancelRequest(row)}>
+          {cancelBusy ? 'Cancelling…' : 'Confirm cancellation'}
+        </button>
+      </div>
+    </section> : <button type="button" className="cancellation-trigger" disabled={cancelBusy || !!cancelError}
+      ref={element => { if (element) cancelTriggers.current.set(row.id, element); else cancelTriggers.current.delete(row.id); }}
+      onClick={() => {
+        setCancelError(''); setCancelNotice(''); focusRequest.current = 'confirmation'; setConfirmId(row.id);
+      }}>Cancel request</button>;
+  }
   const list = view.kind === 'requests' || view.kind === 'loans';
   const isRequest = view.kind.startsWith('request');
   return <section className="borrowing" aria-label="Your borrowing records">
@@ -100,19 +177,28 @@ export function BorrowerWorkspace() {
           </form>}
       </>}
     </section>}
-    {list && <h2>{isRequest ? 'My Requests' : 'My Active Loans'}</h2>}
-    {!list && view.kind.endsWith('-detail') && <h2>{isRequest ? 'Request detail' : 'Active Loan detail'}</h2>}
+    {list && <h2 ref={recordsHeading} tabIndex={-1}>{isRequest ? 'My Requests' : 'My Active Loans'}</h2>}
+    {!list && view.kind.endsWith('-detail') && <h2 ref={recordsHeading} tabIndex={-1}>{isRequest ? 'Request detail' : 'Active Loan detail'}</h2>}
+    <p role="status" aria-label="Cancellation update" aria-atomic="true" ref={cancellationStatus} tabIndex={-1}
+      className="cancellation-feedback">{cancelNotice}</p>
     {loading && <p role="status">Loading your records…</p>}
     {error && <div><p role="alert" className="error">{error}</p>{view.kind !== 'request' && <button onClick={() => setAttempt(n => n + 1)}>Try again</button>}</div>}
+    {cancelError && <div><p role="alert" className="error">{cancelError}</p><button type="button" ref={refreshRequests} onClick={() => {
+      setCancelError(''); setConfirmId(null); focusRequest.current = 'records'; setAttempt(n => n + 1);
+    }}>Refresh requests</button></div>}
     {!loading && !error && list && (items.length ? <ul className="record-list">{items.map(row => <li key={row.id}>
       <button onClick={() => navigate(isRequest ? 'requests' : 'loans', row.id)}>{row.asset.assetCode} — {row.asset.modelName}</button>
-      <span>{row.status ?? 'Active Loan'}</span>
+      <span className={row.status ? `request-status ${row.status.toLowerCase()}` : undefined}>{row.status ?? 'Active Loan'}</span>
+      {row.cancelledAt && <span>Cancelled: <time dateTime={row.cancelledAt}>{new Date(row.cancelledAt).toLocaleString()}</time></span>}
+      {isRequest && cancelControls(row)}
     </li>)}</ul> : <p>{isRequest ? 'No requests yet.' : 'No active Loans.'}</p>)}
     {!loading && !error && detail && <div className="record-detail">
       <p>{detail.asset.assetCode} — {detail.asset.modelName}</p><p>{detail.asset.category}</p>
-      {detail.status && <p>{detail.status}</p>}
+      {detail.status && <p className={`request-status ${detail.status.toLowerCase()}`}>{detail.status}</p>}
+      {detail.cancelledAt && <p>Cancelled: <time dateTime={detail.cancelledAt}>{new Date(detail.cancelledAt).toLocaleString()}</time></p>}
       <p>{isRequest ? 'Requested' : 'Checked out'}: <time dateTime={detail.createdAt ?? detail.checkedOutAt}>{new Date(detail.createdAt ?? detail.checkedOutAt ?? '').toLocaleString()}</time></p>
       <p className="record-id">Record: {detail.id}</p>
+      {isRequest && cancelControls(detail)}
       <button onClick={() => navigate(isRequest ? 'requests' : 'loans')}>Back to list</button>
     </div>}
   </section>;
