@@ -1,1 +1,49 @@
 .borrowing{margin-top:1.5rem;border-top:1px solid var(--line);padding-top:1rem;min-width:0}.borrowing-nav{display:flex;flex-wrap:wrap;gap:.5rem}.borrowing-nav button{background:#eef2ff;color:var(--indigo)}.borrowing h2{font-size:1.25rem;line-height:1.35;overflow-wrap:anywhere}.borrowing p{overflow-wrap:anywhere}.record-list{list-style:none;margin:0;padding:0}.record-list li{padding:.65rem 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;align-items:center;gap:.65rem}.record-list button{text-align:left;white-space:normal;overflow-wrap:anywhere;background:#eef2ff;color:var(--indigo)}.record-list span{font-size:.8rem;color:var(--slate)}.record-id{font-size:.8rem;overflow-wrap:anywhere}
+
+/* Keep request state and confirmation scoped to borrowing records. */
+.borrowing .request-status {
+  display: inline-flex;
+  width: fit-content;
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 700;
+}
+.borrowing .request-status.pending { background: #fef3c7; color: #92400e; }
+.borrowing .request-status.fulfilled { background: #dcfce7; color: #166534; }
+.borrowing .request-status.cancelled { background: #f1f5f9; color: #475569; }
+.cancellation-confirmation {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: .75rem 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: .7rem;
+  background: #f8fafc;
+}
+.cancellation-confirmation h3 {
+  margin: 0;
+  color: #1e1b4b;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.cancellation-confirmation p { margin: .5rem 0 .75rem; }
+.cancellation-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+.borrowing .cancellation-actions button {
+  margin: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.borrowing .cancellation-keep { background: #fff; color: #334155; border: 1px solid #94a3b8; }
+.borrowing .cancellation-keep:hover:not(:disabled) { background: #f1f5f9; }
+.borrowing .cancellation-destructive { background: #b91c1c; color: #fff; border: 1px solid #b91c1c; }
+.borrowing .cancellation-destructive:hover:not(:disabled) { background: #991b1b; }
+.cancellation-feedback:not(:empty) {
+  margin: .75rem 0;
+  padding: .75rem;
+  border: 1px solid var(--line);
+  border-radius: .5rem;
+  background: #eef2ff;
+  color: #3730a3;
+}
+.cancellation-feedback:empty { margin: 0; }

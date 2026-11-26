@@ -317,9 +317,7 @@ export function CustodianWorkspace() {
 
                     <span
                       className={
-                        item.status === 'PENDING'
-                          ? 'custodian-status pending'
-                          : 'custodian-status fulfilled'
+                        `custodian-status ${item.status.toLowerCase()}`
                       }
                     >
                       {item.status}

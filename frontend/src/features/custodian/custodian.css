@@ -146,6 +146,11 @@
   color: #92400e;
 }
 
+.custodian-status.cancelled {
+  background: #f1f5f9;
+  color: #475569;
+}
+
 .custodian-status.fulfilled,
 .custodian-status.active {
   background: #dcfce7;
