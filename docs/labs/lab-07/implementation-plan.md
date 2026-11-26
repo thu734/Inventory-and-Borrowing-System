@@ -59,3 +59,13 @@ Historical RED reproduction and populated-database migration-preservation tests 
 The supplied GCP pre-release verification reports that the migration job configuration, Cloud SQL database identity and Prisma migration history were checked, with no unresolved migrations reported. Automated backups were enabled and recent successful backups observed; PITR was disabled. These are supplied verification results, not a new GCP inspection by this documentation review or proof of Lab 7 production execution. Record exact resource/backup identifiers and verification times in the release/submission evidence.
 
 Before release, complete PR #79 independent approval and the migration/recovery safety gate, including a cancellation-compatible rollback or roll-forward strategy. After authorized merge/deployment, record the actual main SHA, migration outcome, application image/revision, traffic and smoke/workflow results, and verify preserved records. Keep those outcomes pending until observed. Detailed RED/reproduction output, migration-preservation artifacts, GCP backup metadata and final screenshots belong in the Lab 7 submission report under [Issue #78](https://github.com/thu734/Inventory-and-Borrowing-System/issues/78), with release execution tracked by [Issue #77](https://github.com/thu734/Inventory-and-Borrowing-System/issues/77).
+
+
+### Lab 7 Release Safety and Rollback Plan
+
+The verified Cloud SQL backup evidence, production schema preflight,
+migration job configuration, and Lab 7 rollback restrictions are
+documented in [Lab 7 Release Safety](release-safety.md).
+
+Production release remains on hold until the outstanding safety
+checks and required approvals are completed.
