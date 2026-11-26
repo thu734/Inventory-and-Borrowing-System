@@ -151,7 +151,7 @@ Loan fixtures use existing constraints, including matching borrower/asset/reques
 
 ### Initial red phase
 
-The executable file `backend/tests/f03.contract.red.test.ts` preserves the three original baseline expectations (anonymous creation rejected before domain lookup, authenticated own request list and own active-Loan list). Its recorded red run is historical evidence from before the F-03 routes existed; after implementation the same assertions pass. The suite uses the test-only auth store and does not establish PostgreSQL persistence or all acceptance criteria.
+The executable file `backend/tests/f03.contract.red.test.ts` preserves the three original baseline expectations (anonymous creation rejected before domain lookup, authenticated own request list and own active-Loan list). Its recorded Sprint 1 red run is historical evidence from before the F-03 routes existed; after implementation the same assertions pass. The suite uses the test-only auth store and does not establish PostgreSQL persistence or all acceptance criteria.
 
 ## 8. Historical implementation order and November 7 verification
 
@@ -182,7 +182,7 @@ Verification evidence (7 November 2026):
 
 ## Lab 7 contract revision — Issue #71 (revision 1.2, 25 November 2026)
 
-TA approval: **P’ Tik**, **November 25, 2026**; the original email is not attached or independently inspected here. Status: **pending teammate review**. Approved transition: owner-only `PENDING → CANCELLED`, only while pending. Fulfilled/cancelled requests return `409 REQUEST_NOT_PENDING`, remain persisted and owner-visible, and do not delete history, create a Loan or alter Asset availability. `POST /api/v1/me/borrow-requests/:id/cancel` uses existing authentication, Borrower role, Origin and CSRF guards and an empty strict JSON body. UI requires confirmation, loading, server-authoritative status, explicit cancelledAt display/status and recoverable errors. Cancellation serializes with checkout using the existing Asset-first lock order and request recheck.
+TA approval: **P’ Tik**, **November 25, 2026**; the original email is not attached or independently inspected here. Current status: **contract approved in [PR #74](https://github.com/thu734/Inventory-and-Borrowing-System/pull/74); implementation approved and merged in [PR #76](https://github.com/thu734/Inventory-and-Borrowing-System/pull/76)**. [Lab 7 verification](../../../labs/lab-07/implementation-plan.md#d-current-verification-evidence--26-november-2026) records passing automated regression at staging `1c8029e`; release PR #79 and deployment remain pending. Approved transition: owner-only `PENDING → CANCELLED`, only while pending. Fulfilled/cancelled requests return `409 REQUEST_NOT_PENDING`, remain persisted and owner-visible, and do not delete history, create a Loan or alter Asset availability. `POST /api/v1/me/borrow-requests/:id/cancel` uses existing authentication, Borrower role, Origin and CSRF guards and an empty strict JSON body. UI requires confirmation, loading, server-authoritative status, explicit cancelledAt display/status and recoverable errors. Cancellation serializes with checkout using the existing Asset-first lock order and request recheck.
 
 | AC | Expected behavior | STS |
 |---|---|---|
@@ -206,4 +206,4 @@ TA approval: **P’ Tik**, **November 25, 2026**; the original email is not atta
 
 | TEST-REG-01 | API/PostgreSQL/UI regression | Existing F-01 authentication/RBAC, F-02 catalog/availability, F-03 request/own-record and F-04 queue/checkout suites and fixtures | Run the existing Sprint 1 regression suite after implementation | F-01–F-04 behavior remains unchanged except the approved cancellation transition; ownership, duplicate prevention, checkout uniqueness, persistence and existing error conventions continue to pass. |
 
-Revision metadata: no preceding F-03 version label is recorded in the existing document; this is the first explicitly versioned Lab 7 revision, **1.2**, dated **November 25, 2026**. Reason: **Approved Lab 7 request-lifecycle change, Issue #71**; TA approval: **P’ Tik**; reviewer **Pending**; implementation **Not started**; review status **Pending teammate review**.
+Historical Part A revision metadata (status at drafting, before PR #74 approval and PR #76 implementation): no preceding F-03 version label is recorded in the existing document; this is the first explicitly versioned Lab 7 revision, **1.2**, dated **November 25, 2026**. Reason: **Approved Lab 7 request-lifecycle change, Issue #71**; TA approval: **P’ Tik**; reviewer **Pending**; implementation **Not started**; review status **Pending teammate review**.

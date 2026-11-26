@@ -1,6 +1,8 @@
 # BorrowBase — Lab 7 Part A: Approved Change Impact and Contract Revision
 
-Status: **contract preparation complete; pending teammate review before implementation**. No code, schema, migration or executable test was changed or run.
+Current status — **26 November 2026:** contracts approved in [PR #74](https://github.com/thu734/Inventory-and-Borrowing-System/pull/74); implementation and cancellation UI accessibility corrections approved and merged in [PR #76](https://github.com/thu734/Inventory-and-Borrowing-System/pull/76). Staging is `1c8029e7a727912c2bf4420dd7150f6b4b1632d5`. [Release PR #79](https://github.com/thu734/Inventory-and-Borrowing-System/pull/79) is open; Lab 7 has not reached main or been deployed. Release approval and deployment verification remain pending.
+
+**Historical Part A status (25 November 2026):** contract preparation was complete and pending teammate review before implementation. That documentation-only stage changed or ran no code, schema, migration or executable test. Sections A–C retain the original impact analysis and intended sequence; they are not a current implementation backlog.
 
 ## A. Change reference and baseline
 
@@ -35,4 +37,25 @@ Status: **contract preparation complete; pending teammate review before implemen
 8. Integrate through Lab 7 staging and release to main.
 9. Verify the deployed changed workflow and preserved workflows.
 
-Steps after contract revision are future gates.
+At Part A, steps after contract revision were future gates. Contract approval, implementation, automated regression, implementation review and staging integration are now complete. The test-first commit order is preserved: `c872d04` adds cancellation tests before implementation commit `fd83e0c`; this order alone does not verify an original RED execution. Release to main and deployed verification remain pending.
+
+## D. Current verification evidence — 26 November 2026
+
+[CI run 45788966274](https://github.com/thu734/Inventory-and-Borrowing-System/actions/runs/45788966274) passed all five required checks for PR #79. It tested merge `2a9ab91` of staging `1c8029e` into main baseline `e042f06`; these results predate this documentation reconciliation.
+
+| Executed check | Result | Evidence |
+|---|---|---|
+| Backend unit/API; frontend UI | 75 passed; 54 passed | [Unit, API and UI job](https://github.com/thu734/Inventory-and-Borrowing-System/actions/runs/45788966274/job/139802842703) |
+| F-01; F-02; F-03; F-04/Lab 7 PostgreSQL | 5; 9; 31; 19 passed | [PostgreSQL job](https://github.com/thu734/Inventory-and-Borrowing-System/actions/runs/45788966274/job/139802842923) |
+| Typecheck, production builds; offline deployment-script tests | Passed; 49 offline tests passed | [Typecheck and build job](https://github.com/thu734/Inventory-and-Borrowing-System/actions/runs/45788966274/job/139802842551) |
+| Docker build; CI evidence summary | Passed | Linked CI run |
+
+The PostgreSQL job runs `npm run db:migrate` on separate disposable databases, seeds F-01 fixtures, and executes `auth.postgres.test.ts`, `f02.postgres.test.ts`, `f03.postgres.test.ts` and `f04.postgres.test.ts`. The F-04 suite includes persisted cancellation/history through a fresh app/Prisma client and barrier-controlled cancellation-wins and checkout-wins cases. The UI suite includes cancellation confirmation, focus restoration, progress/success feedback, recoverable failures and duplicate-submission prevention. Component tests do not establish complete real-browser accessibility or E2E coverage.
+
+Historical RED reproduction and populated-database migration-preservation tests have been reported, but no supporting execution log/artifact was located in the inspected PR discussion or committed files. They are not marked verified here. Fresh-database CI migration success does not establish upgrade preservation of existing records.
+
+## E. Pre-release checks and remaining gates
+
+The supplied GCP pre-release verification reports that the migration job configuration, Cloud SQL database identity and Prisma migration history were checked, with no unresolved migrations reported. Automated backups were enabled and recent successful backups observed; PITR was disabled. These are supplied verification results, not a new GCP inspection by this documentation review or proof of Lab 7 production execution. Record exact resource/backup identifiers and verification times in the release/submission evidence.
+
+Before release, complete PR #79 independent approval and the migration/recovery safety gate, including a cancellation-compatible rollback or roll-forward strategy. After authorized merge/deployment, record the actual main SHA, migration outcome, application image/revision, traffic and smoke/workflow results, and verify preserved records. Keep those outcomes pending until observed. Detailed RED/reproduction output, migration-preservation artifacts, GCP backup metadata and final screenshots belong in the Lab 7 submission report under [Issue #78](https://github.com/thu734/Inventory-and-Borrowing-System/issues/78), with release execution tracked by [Issue #77](https://github.com/thu734/Inventory-and-Borrowing-System/issues/77).

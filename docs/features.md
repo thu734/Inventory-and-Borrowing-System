@@ -23,9 +23,11 @@ Member 6 owns F-03 Borrower endpoints; Member 2 owns F-04 Custodian endpoints, t
 
 ## Lab 7 contract delta — Issue #71
 
-F-03 now includes owner-only cancellation of PENDING requests; F-04 rejects CANCELLED checkout and shares the Asset-first lock/recheck guarantee. Contract/STS revision 1.2 (25 November 2026), approved by P’ Tik; reviewer and teammate review are pending. F-05–F-10 are unchanged.
+F-03 now includes owner-only cancellation of PENDING requests; F-04 rejects CANCELLED checkout and shares the Asset-first lock/recheck guarantee. Contract/STS revision 1.2 (25 November 2026), approved by P’ Tik; teammate contract review was approved in [PR #74](https://github.com/thu734/Inventory-and-Borrowing-System/pull/74). Implementation and UI accessibility corrections were approved and merged in PR #76 at staging `1c8029e`. [Current verification](labs/lab-07/implementation-plan.md#d-current-verification-evidence--26-november-2026) records five passing checks for open release PR #79; main release and deployment remain pending. F-05–F-10 are unchanged.
 
-## Implementation and verification snapshot
+## Historical Sprint 1 implementation and verification snapshot
+
+The following snapshot predates Lab 7 and retains its original evidence limits. Lab 7 cancellation, both forced cancellation/checkout race outcomes, fresh-instance persistence and focused UI accessibility tests now have the CI evidence linked above; this does not close unrelated browser, catalog or release gaps.
 
 Baseline synchronization committed in `9bab834` on top of `21ad3e3`; this merge also incorporates the confirmed Q-02 decision from `e78dc65`. F-01–F-04 and SYS-01 are integrated. The implementation, migrations and tests are unchanged from evidence commit `3710af0`; subsequent committed changes through this inspection baseline are documentation-only. Existing evidence was inspected, not rerun for this synchronization.
 

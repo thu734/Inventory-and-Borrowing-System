@@ -163,9 +163,9 @@ The following cases specify F-04 verification; executed results and remaining co
 
 [Integrated verification](../evidence/Sprint-1-integration-verification.md) records 5 checkout-rule, 15 API, 11 PostgreSQL and 9 UI tests passing for F-04 at `3710af0`, plus real UI checkout/Loan retrieval and browser API rejection checks. The 40 targeted tests overlap the report's 159-test total; do not add them again. No new run occurred in this editorial audit.
 
-AC-F04-06/NFR-04 remains partial for the synchronized-race criterion: the real PostgreSQL test uses parallel `Promise.all` calls without a barrier-controlled race. AC-F04-09 has component-state and sampled responsive/browser evidence, but full keyboard/accessibility and every browser fault state remain incomplete. Immediate catalog availability remains stale after checkout until Refresh Equipment; persisted/API state is correct. This does not relax FR-02/FR-06 or imply complete release acceptance. Q-02 is confirmed; unrelated security/API approvals and release acceptance are not established by these test results.
+At the November 12 baseline, AC-F04-06/NFR-04 remained partial for the synchronized-race criterion: the real PostgreSQL test uses parallel `Promise.all` calls without a barrier-controlled race. AC-F04-09 has component-state and sampled responsive/browser evidence, but full keyboard/accessibility and every browser fault state remain incomplete. Immediate catalog availability remains stale after checkout until Refresh Equipment; persisted/API state is correct. This does not relax FR-02/FR-06 or imply complete release acceptance. Q-02 is confirmed; unrelated security/API approvals and release acceptance are not established by these test results.
 
-All planned tests must be executed against the implemented feature.
+Lab 7 cancellation-versus-checkout barrier cases now pass for both forced winners in the linked CI evidence. This does not retrospectively add a barrier to the older two-checkout test or establish complete browser accessibility. All other planned tests still require executed evidence before being marked passed.
 
 The final verification evidence must record:
 
@@ -193,6 +193,8 @@ No test is considered passed until it has actually been executed. Failed and ski
 
 ## Revision history
 
+The version history retains status at drafting; subsequent Lab 7 approval and implementation are recorded below.
+
 | Revision | Change |
 |---|---|
 | 1.0 | Initial Sprint 1 engineering contract. |
@@ -201,7 +203,7 @@ No test is considered passed until it has actually been executed. Failed and ski
 
 ## Lab 7 contract revision — Issue #71 (25 November 2026)
 
-TA approval: **P’ Tik**, **November 25, 2026**; the original email is not attached or independently inspected here. Status: **pending teammate review**. Checkout rejects `CANCELLED` requests with `409 REQUEST_NOT_PENDING`. Cancellation must: read the request to identify its Asset; begin a transaction; lock the Asset first; lock and re-read the BorrowRequest; verify the request still belongs to that Asset and is PENDING and the authenticated actor owns it; conditionally transition it to CANCELLED and persist cancelledAt; then commit. Checkout uses the same Asset-first/request-recheck order. If cancellation wins, checkout returns 409 without a Loan; if checkout wins, cancellation returns 409 without changing the FULFILLED request, fulfilledAt or Loan. Existing active-Loan uniqueness, availability, Custodian authorization, borrower/asset derivation and rollback rules remain unchanged.
+TA approval: **P’ Tik**, **November 25, 2026**; the original email is not attached or independently inspected here. Current status: **contract approved in [PR #74](https://github.com/thu734/Inventory-and-Borrowing-System/pull/74); implementation approved and merged in [PR #76](https://github.com/thu734/Inventory-and-Borrowing-System/pull/76)**. [Lab 7 verification](../../../labs/lab-07/implementation-plan.md#d-current-verification-evidence--26-november-2026) records passing automated regression at staging `1c8029e`; release PR #79 and deployment remain pending. Checkout rejects `CANCELLED` requests with `409 REQUEST_NOT_PENDING`. Cancellation must: read the request to identify its Asset; begin a transaction; lock the Asset first; lock and re-read the BorrowRequest; verify the request still belongs to that Asset and is PENDING and the authenticated actor owns it; conditionally transition it to CANCELLED and persist cancelledAt; then commit. Checkout uses the same Asset-first/request-recheck order. If cancellation wins, checkout returns 409 without a Loan; if checkout wins, cancellation returns 409 without changing the FULFILLED request, fulfilledAt or Loan. Existing active-Loan uniqueness, availability, Custodian authorization, borrower/asset derivation and rollback rules remain unchanged.
 
 | AC | Expected behavior | STS |
 |---|---|---|
@@ -217,4 +219,4 @@ TA approval: **P’ Tik**, **November 25, 2026**; the original email is not atta
 | TEST-F04-12 / AC-F04-12 | API security | Anonymous, Borrower, inactive/revoked and valid Custodian sessions | Attempt checkout | Existing 401/403 matrix; no private data or writes on rejection. |
 | TEST-F04-13 / AC-F04-13 | Barrier-controlled PostgreSQL | One PENDING request; valid owner cancellation and Custodian checkout | Execute both transactions concurrently | Exactly one succeeds: CANCELLED with cancelledAt/no Loan or FULFILLED with fulfilledAt/one active Loan. Loser returns 409 and cannot alter winner state. |
 
-Revision metadata: previous F-04 version **1.1**; revised version **1.2**; revision date **November 25, 2026**; reason **Approved Lab 7 request-lifecycle change, Issue #71**; TA approval **P’ Tik**; reviewer **Pending**; implementation **Not started**; review status **Pending teammate review**.
+Historical Part A revision metadata (status at drafting, before PR #74 approval and PR #76 implementation): previous F-04 version **1.1**; revised version **1.2**; revision date **November 25, 2026**; reason **Approved Lab 7 request-lifecycle change, Issue #71**; TA approval **P’ Tik**; reviewer **Pending**; implementation **Not started**; review status **Pending teammate review**.

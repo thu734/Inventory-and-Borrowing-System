@@ -162,7 +162,7 @@ npm run db:seed
 
 ## Lab 7 contract delta — Issue #71
 
-The revised F-03/F-04 contracts add persisted `CANCELLED` request state, owner-only cancellation, cancelled-checkout rejection, and mutually exclusive atomic cancellation/checkout. The required schema migration is a future implementation gate; Part A makes no schema change. F-01/F-02 and Sprint 2 modules are unaffected.
+The revised F-03/F-04 contracts add persisted `CANCELLED` request state, owner-only cancellation, cancelled-checkout rejection, and mutually exclusive atomic cancellation/checkout. Part A originally made no schema change; the forward migration and application changes are now implemented and merged in PR #76 at staging `1c8029e`. [Current Lab 7 verification](labs/lab-07/implementation-plan.md#d-current-verification-evidence--26-november-2026) records passing fresh-database migration, fresh-instance persistence and both forced cancellation/checkout race outcomes. Populated-database upgrade preservation is not established by that CI run. Release PR #79 and production deployment remain pending. F-01/F-02 and Sprint 2 modules are unaffected.
 
 ## 5. UI architecture
 
@@ -273,11 +273,11 @@ The backend requires:
 
 The root environment also supplies synthetic seed passwords. Environment files are ignored and must never contain committed credentials. Prisma CLI commands and the backend use the configured database URL; migrations and seeding are explicit operations rather than application-startup side effects.
 
-Build and runtime are separate: TypeScript is checked and the backend build emits compiled artifacts through `tsconfig.build.json`; the current development script runs `src/server.ts` with Node's watch mode. The frontend build runs TypeScript checking and emits a Vite static artifact. A production process/container start command remains deployment work.
+Build and runtime are separate: TypeScript is checked and the backend build emits compiled artifacts through `tsconfig.build.json`; the current development script runs `src/server.ts` with Node's watch mode. The frontend build runs TypeScript checking and emits a Vite static artifact. At the historical Sprint 1 baseline, a production process/container start command remained deployment work; the current `Dockerfile` supplies the application start command.
 
-### 8.2 Planned packaging and cloud deployment
+### 8.2 Historical Sprint 1 packaging and cloud deployment plan
 
-Container packaging and GCP deployment are planned delivery work, not implemented in the current repository. The intended deployment separation is:
+The following is the historical Sprint 1 delivery plan. Packaging and release automation now exist in `Dockerfile`, `.github/workflows/deploy.yml` and `deploy/release.sh`; see the [deployment guide](labs/lab-05/deployment.md). The supplied GCP pre-release checks and remaining Lab 7 gates are recorded in the [Lab 7 plan](labs/lab-07/implementation-plan.md#e-pre-release-checks-and-remaining-gates). Lab 7 has not been deployed. At the original planning baseline, container packaging and GCP deployment were planned delivery work, not yet implemented. The intended deployment separation is:
 
 ```text
 Browser
@@ -310,6 +310,8 @@ No Docker image, GCP project, Cloud Run service, Cloud SQL instance or productio
 9. F-05 through F-10 depend on the shared schema and the state transitions established by F-03/F-04. Due-date, history and reporting behavior must not be inferred from Sprint 1 active-loan retrieval.
 
 ## 10. Verification status and review limits
+
+Current Lab 7 implementation/review and CI results are linked in Section 4. The following November 12 snapshot retains its historical limits; the newer cancellation/checkout barrier tests and focused UI accessibility tests do not establish full two-checkout synchronization, all-screen accessibility or production acceptance.
 
 F-01–F-04 are mounted in the integrated application. The [November 12 integrated verification](sprints/sprint-1/evidence/Sprint-1-integration-verification.md) records execution at `3710af0`: 159 unique passing tests in successful runs, typechecks/builds and real browser/PostgreSQL checkout, ownership, conflict and restart checks. Application/schema/test source is unchanged through documentation baseline `21ad3e3`; this editorial audit did not rerun those checks.
 
