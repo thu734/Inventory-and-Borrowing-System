@@ -47,25 +47,28 @@ const ids = {
 
 let modelId = '';
 
+function buildApp(client: PrismaClient) {
 const auth = createApp({
-  store: new PrismaAuthStore(db),
+  store: new PrismaAuthStore(client),
   origin,
   csrfSecret: 'f04-postgres-test-secret-with-at-least-32-bytes',
   secureCookies: false
 });
 
-mountBorrowingRoutes(auth, new PrismaBorrowingStore(db));
-mountCatalogRoutes(auth, new PrismaCatalogStore(db));
-mountCustodianRoutes(auth, store);
+mountBorrowingRoutes(auth, new PrismaBorrowingStore(client));
+mountCatalogRoutes(auth, new PrismaCatalogStore(client));
+mountCustodianRoutes(auth, new PrismaCustodianStore(client));
 
-const app = finishApp(auth.app);
+return finishApp(auth.app);
+}
+const app = buildApp(db);
 
 function email(person: Person) {
   return `${person}-${suffix}@example.test`;
 }
 
-async function login(person: Person) {
-  const agent = request.agent(app);
+async function login(person: Person, application = app) {
+  const agent = request.agent(application);
 
   const response = await agent
     .post('/api/v1/auth/login')
@@ -216,6 +219,166 @@ afterAll(async () => {
 });
 
 describe('F-04 real PostgreSQL checkout integration', () => {
+  const cancel = (auth: Awaited<ReturnType<typeof login>>, id: string) =>
+    auth.agent.post(`/api/v1/me/borrow-requests/${id}/cancel`)
+      .set('Origin', origin).set('X-CSRF-Token', auth.csrf).send({});
+
+  it('TEST-F03-10/13/15 persists owner cancellation and history without changing the Asset or creating a Loan', async () => {
+    const asset = await createAsset('CANCEL-HISTORY');
+    const pending = await createRequest(asset.id);
+    const owner = await login('borrower-a');
+    const response = await cancel(owner, pending.id);
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({ id: pending.id, status: 'CANCELLED', asset: { id: asset.id } });
+    expect(Number.isNaN(Date.parse(response.body.data.cancelledAt))).toBe(false);
+    const saved = await db.borrowRequest.findUniqueOrThrow({ where: { id: pending.id } });
+    expect(saved).toMatchObject({ id: pending.id, borrowerId: ids.borrowerA, assetId: asset.id, createdAt: pending.createdAt, status: 'CANCELLED', fulfilledAt: null });
+    expect(await db.asset.findUnique({ where: { id: asset.id } })).toEqual(asset);
+    expect(await db.loan.count({ where: { borrowRequestId: pending.id } })).toBe(0);
+    const freshDb = new PrismaClient();
+    try {
+      const fresh = await login('borrower-a', buildApp(freshDb));
+      const detail = await fresh.agent.get(`/api/v1/me/borrow-requests/${pending.id}`);
+      const list = await fresh.agent.get('/api/v1/me/borrow-requests');
+      expect(detail.status).toBe(200);
+      expect(list.status).toBe(200);
+      expect(detail.body.data).toMatchObject({ id: pending.id, status: 'CANCELLED', cancelledAt: response.body.data.cancelledAt });
+      expect(list.body.data.items).toContainEqual(expect.objectContaining({ id: pending.id, status: 'CANCELLED', cancelledAt: response.body.data.cancelledAt }));
+    } finally { await freshDb.$disconnect(); }
+    const repeat = await cancel(owner, pending.id);
+    expect(repeat.status).toBe(409);
+    expect(repeat.body.error.code).toBe('REQUEST_NOT_PENDING');
+    const custodian = await login('custodian');
+    const rejected = await checkout(custodian.agent, custodian.csrf, pending.id);
+    expect(rejected.status).toBe(409);
+    expect(rejected.body.error.code).toBe('REQUEST_NOT_PENDING');
+    expect(await db.loan.count({ where: { borrowRequestId: pending.id } })).toBe(0);
+    const custodianList = await custodian.agent.get('/api/v1/custodian/borrow-requests?status=CANCELLED');
+    expect(custodianList.status).toBe(200);
+    expect(custodianList.body.data.items).toContainEqual(expect.objectContaining({ id: pending.id, status: 'CANCELLED', cancelledAt: response.body.data.cancelledAt }));
+    const again = await owner.agent.post('/api/v1/borrow-requests').set('Origin', origin).set('X-CSRF-Token', owner.csrf).send({assetId: asset.id});
+    expect(again.status).toBe(201);
+  });
+
+  it('TEST-F03-11 rejects foreign Borrower cancellation without writes', async () => {
+    const asset = await createAsset('CANCEL-AUTH');
+    const pending = await createRequest(asset.id);
+    expect((await cancel(await login('borrower-b'), pending.id)).status).toBe(404);
+    expect(await db.borrowRequest.findUnique({ where: { id: pending.id } })).toEqual(pending);
+  });
+
+  it('TEST-F03-11 rejects Custodian cancellation without writes', async () => {
+    const asset = await createAsset('CANCEL-CUSTODIAN');
+    const pending = await createRequest(asset.id);
+    expect((await cancel(await login('custodian'), pending.id)).status).toBe(403);
+    expect(await db.borrowRequest.findUnique({ where: { id: pending.id } })).toEqual(pending);
+  });
+  it('validates cancellation input and mutation guards without writes', async () => {
+    const asset = await createAsset('CANCEL-INVALID');
+    const pending = await createRequest(asset.id);
+    const owner = await login('borrower-a');
+    const path = `/api/v1/me/borrow-requests/${pending.id}/cancel`;
+    expect((await owner.agent.post(path).set('Origin', origin).send({})).status).toBe(403);
+    expect((await owner.agent.post(path).set('Origin', 'https://foreign.test').set('X-CSRF-Token', owner.csrf).send({})).status).toBe(403);
+    expect((await owner.agent.post(path).set('Origin', origin).set('X-CSRF-Token', owner.csrf).send({status:'CANCELLED'})).status).toBe(400);
+    expect((await cancel(owner, 'invalid')).status).toBe(400);
+    expect((await cancel(owner, randomUUID())).status).toBe(404);
+    expect(await db.borrowRequest.findUnique({where:{id:pending.id}})).toEqual(pending);
+  });
+
+  it('TEST-F03-12 rejects cancellation after checkout without changing the request or Loan', async () => {
+    const asset = await createAsset('CANCEL-FULFILLED');
+    const pending = await createRequest(asset.id);
+    const custodian = await login('custodian');
+    expect((await checkout(custodian.agent, custodian.csrf, pending.id)).status).toBe(201);
+    const before = await db.borrowRequest.findUnique({ where: { id: pending.id } });
+    const loans = await db.loan.findMany({ where: { borrowRequestId: pending.id } });
+    const response = await cancel(await login('borrower-a'), pending.id);
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('REQUEST_NOT_PENDING');
+    expect(await db.borrowRequest.findUnique({ where: { id: pending.id } })).toEqual(before);
+    expect(await db.loan.findMany({ where: { borrowRequestId: pending.id } })).toEqual(loans);
+  });
+
+  it('TEST-F03-16/TEST-F04-13 allows exactly one concurrent transition', async () => {
+    const asset = await createAsset('CANCEL-RACE');
+    const pending = await createRequest(asset.id);
+    const owner = await login('borrower-a');
+    const custodian = await login('custodian');
+    const [cancelled, checkedOut] = await Promise.all([
+      cancel(owner, pending.id), checkout(custodian.agent, custodian.csrf, pending.id)
+    ]);
+    const saved = await db.borrowRequest.findUniqueOrThrow({ where: { id: pending.id } });
+    const loans = await db.loan.findMany({ where: { borrowRequestId: pending.id } });
+    if (cancelled.status === 200) {
+      expect(checkedOut.status).toBe(409);
+      expect(checkedOut.body.error.code).toBe('REQUEST_NOT_PENDING');
+      expect(saved.status).toBe('CANCELLED');
+      expect(saved.fulfilledAt).toBeNull();
+      expect(loans).toHaveLength(0);
+    } else {
+      expect(checkedOut.status).toBe(201);
+      expect(cancelled.status).toBe(409);
+      expect(cancelled.body.error.code).toBe('REQUEST_NOT_PENDING');
+      expect(saved.status).toBe('FULFILLED');
+      expect(saved.fulfilledAt).not.toBeNull();
+      expect(loans).toHaveLength(1);
+    }
+  });
+  it.each(['cancel', 'checkout'] as const)('barrier race forces %s to win', async winner => {
+    const asset = await createAsset(`BARRIER-${winner}`);
+    const pending = await createRequest(asset.id);
+    const owner = await login('borrower-a');
+    const custodian = await login('custodian');
+    let ready!: () => void;
+    let release!: () => void;
+    const locked = new Promise<void>(resolve => { ready = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const holder = db.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Asset" WHERE "id" = ${asset.id} FOR UPDATE`;
+      ready();
+      await gate;
+    }, { timeout: 15000 });
+    const waiters = async (expected: number) => {
+      for (let i = 0; i < 100; i++) {
+        const rows = await db.$queryRaw<{ count: bigint }[]>`
+          SELECT count(*) AS count FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'
+            AND query LIKE '%FROM "Asset"%' AND pid <> pg_backend_pid()`;
+        if (Number(rows[0]?.count) >= expected) return;
+        await new Promise(resolve => setTimeout(resolve, 30));
+      }
+      throw new Error(`Timed out waiting for ${expected} Asset lock waiters`);
+    };
+    let first!: Promise<request.Response>;
+    let second!: Promise<request.Response>;
+    try {
+      await locked;
+      const runCancel = () => cancel(owner, pending.id).then(result => result);
+      const runCheckout = () => checkout(custodian.agent, custodian.csrf, pending.id).then(result => result);
+      first = winner === 'cancel' ? runCancel() : runCheckout();
+      await waiters(1);
+      second = winner === 'cancel' ? runCheckout() : runCancel();
+      await waiters(2);
+    } finally { release(); await holder; }
+    const [won, lost] = await Promise.all([first, second]);
+    expect(won.status).toBe(winner === 'cancel' ? 200 : 201);
+    expect(lost.status).toBe(409);
+    expect(lost.body.error.code).toBe('REQUEST_NOT_PENDING');
+    const saved = await db.borrowRequest.findUniqueOrThrow({where:{id:pending.id}});
+    const loans = await db.loan.findMany({where:{borrowRequestId:pending.id}});
+    if (winner === 'cancel') {
+      expect(saved.status).toBe('CANCELLED');
+      expect(saved.cancelledAt).not.toBeNull();
+      expect(saved.fulfilledAt).toBeNull();
+      expect(loans).toHaveLength(0);
+    } else {
+      expect(saved.status).toBe('FULFILLED');
+      expect(saved.fulfilledAt).not.toBeNull();
+      expect(saved.cancelledAt).toBeNull();
+      expect(loans).toHaveLength(1);
+    }
+  }, 20000);
   it('TEST-F04-01 lists, filters and retrieves requests', async () => {
     const firstAsset = await createAsset('LIST-A');
     const secondAsset = await createAsset('LIST-B');
