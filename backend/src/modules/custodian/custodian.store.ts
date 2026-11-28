@@ -18,9 +18,10 @@ export interface CustodianRequestDTO {
     id: string;
     displayName: string;
   };
-  status: 'PENDING' | 'FULFILLED';
+  status: 'PENDING' | 'FULFILLED' | 'CANCELLED';
   createdAt: string;
   fulfilledAt: string | null;
+  cancelledAt: string | null;
   asset: CustodianAssetDTO;
 }
 
@@ -37,7 +38,7 @@ export interface CustodianLoanDTO {
 
 export interface CustodianStore {
   requests(
-    status?: 'PENDING' | 'FULFILLED'
+    status?: 'PENDING' | 'FULFILLED' | 'CANCELLED'
   ): Promise<CustodianRequestDTO[]>;
 
   request(id: string): Promise<CustodianRequestDTO | null>;
@@ -84,6 +85,7 @@ const requestSelect = {
   status: true,
   createdAt: true,
   fulfilledAt: true,
+  cancelledAt: true,
   borrower: {
     select: borrowerSelect
   },
@@ -137,6 +139,7 @@ function requestDTO(row: RequestRow): CustodianRequestDTO {
     status: row.status,
     createdAt: row.createdAt.toISOString(),
     fulfilledAt: row.fulfilledAt?.toISOString() ?? null,
+    cancelledAt: row.cancelledAt?.toISOString() ?? null,
     asset: assetDTO(row.asset)
   };
 }
@@ -161,7 +164,7 @@ export class PrismaCustodianStore implements CustodianStore {
     this.db = db;
   }
 
-  async requests(status?: 'PENDING' | 'FULFILLED') {
+  async requests(status?: 'PENDING' | 'FULFILLED' | 'CANCELLED') {
     const rows = await this.db.borrowRequest.findMany({
       where: status ? { status } : {},
       select: requestSelect,
@@ -244,7 +247,7 @@ export class PrismaCustodianStore implements CustodianStore {
               id: string;
               assetId: string;
               borrowerId: string;
-              status: 'PENDING' | 'FULFILLED';
+              status: 'PENDING' | 'FULFILLED' | 'CANCELLED';
             }[]
           >`
             SELECT

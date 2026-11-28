@@ -1,7 +1,7 @@
 
 import { ApiError } from '../../app.ts';
 
-type RequestStatus = 'PENDING' | 'FULFILLED';
+type RequestStatus = 'PENDING' | 'FULFILLED' | 'CANCELLED';
 
 type Serviceability =
   | 'SERVICEABLE'

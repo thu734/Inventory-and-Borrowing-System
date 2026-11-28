@@ -8,7 +8,7 @@ import type { CustodianStore } from './custodian.store.ts';
 const id = z.uuid();
 
 const querySchema = z.strictObject({
-  status: z.enum(['PENDING', 'FULFILLED']).optional()
+  status: z.enum(['PENDING', 'FULFILLED', 'CANCELLED']).optional()
 });
 
 const emptyBody = z.strictObject({});
@@ -74,7 +74,7 @@ export function mountCustodianRoutes(
           throw new ApiError(
             400,
             'INVALID_INPUT',
-            'Only status=PENDING or status=FULFILLED is supported.'
+            'Only status=PENDING, FULFILLED or CANCELLED is supported.'
           );
         }
 

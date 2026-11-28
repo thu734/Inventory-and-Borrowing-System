@@ -35,7 +35,7 @@ Sprint 1 includes SYS-01 and F-01 through F-04. SYS-01 provides PostgreSQL persi
 - F-05 depends on F-04 active Loans and return fields. F-06 depends on checkout timestamps and the agreed Q-03 due-date/backfill policy. F-07 depends on catalog projections, loan state and historical-reference constraints. F-08 depends on catalog queries and inventory data. F-09 depends on returned and due/overdue Loans. F-10 depends on return, due/overdue and inventory state.
 - The implemented and tested F-03 contract applies Q-01: reject a duplicate `PENDING` request for the same Borrower/Asset pair, including concurrent duplicates, while allowing a later request after fulfillment.
 - Q-02 was confirmed by Member 2 on November 12, 2026 (`e78dc65`): after one request is fulfilled and a Loan is created, competing requests remain `PENDING`; they are not automatically fulfilled or cancelled. The active Loan makes the Asset unavailable, and any later checkout must revalidate eligibility. This is the adopted Sprint 1 policy.
-- Q-03 governs Sprint 2 due dates, overdue behavior and backfill of Sprint 1 Loans. Q-04 remains an open refinement for catalog queries, reporting semantics and related targets.
+- Q-03 governs Sprint 2 due dates, overdue behavior and backfill of Sprint 1 Loans. Q-03 and the selected Q-04 inventory/query/reporting-scope policies were confirmed in PR #73; the NFR-05 local measurement contract is selected on 28 November 2026 for normal PR review.
 - SYS-02 provides local verification and delivery practices in Sprint 1, Lab 5 deployment and quality work in Sprint 2, and final regression/hardening in Sprint 3.
 
 ## 4. Completion criteria
@@ -64,27 +64,27 @@ Every sprint preserves the SRS-to-feature-to-verification traceability. Completi
 
 ## 5. Sprint 2 implementation plan
 
-Status: planning baseline authored by Member 6; teammate review required before implementation. Q-03 and Q-04 are selected proposals pending formal teammate confirmation. Implementation ownership and reviewers remain unassigned until work is ready.
+Status: F-05–F-08 contract/STS baseline and selected Q-03/Q-04 policies were approved by MoeD3482 in [PR #73](https://github.com/thu734/Inventory-and-Borrowing-System/pull/73) at `b54f722` on 26 November 2026 (Asia/Bangkok). Features remain unimplemented and tests unexecuted. Implementation ownership and implementation reviewers remain unassigned. F-07 input bounds and F-09/F-10 interfaces/performance are selected on 28 November 2026, subject to normal PR review; these are not historical PR #73 approvals.
 
 | Feature | Scope | Dependencies | Readiness |
 |---|---|---|---|
-| F-05 | One-time Custodian returns and availability recomputation | F-04, SYS-01 | Contract review and implementation ownership pending |
-| F-06 | Fixed due dates, overdue state and S1 Loan backfill | F-04, F-05 lifecycle, Q-03, SYS-01 | Q-03 confirmation and implementation ownership pending |
-| F-07 | Custodian model/Asset administration | F-01, F-02, F-04, Q-04 | Q-04 confirmation and implementation ownership pending |
-| F-08 | Asset/model search and category/availability filters | F-01, F-02, Q-04 | Contract review and implementation ownership pending |
+| F-05 | One-time Custodian returns and availability recomputation | F-04, SYS-01 | Baseline contract approved; implementation ownership and execution pending |
+| F-06 | Fixed due dates, overdue state and S1 Loan backfill | F-04, F-05 lifecycle, Q-03, SYS-01 | Q-03 confirmed; implementation ownership and execution pending |
+| F-07 | Custodian model/Asset administration | F-01, F-02, F-04, Q-04 | Q-04 inventory policy confirmed; implementation ownership and execution pending |
+| F-08 | Asset/model search and category/availability filters | F-01, F-02, Q-04 | Baseline contract approved; implementation ownership and execution pending |
 
 F-05 and F-07 may proceed in parallel after contract review. F-06 contract and migration design may proceed in parallel with F-05, but Loan schema changes must be coordinated. F-08 can extend the existing catalog query independently and must be regression-tested after F-07 changes inventory data.
 
 ### Contract-first workflow and gates
 
-1. Approve Q-03 and Q-04.
-2. Review F-05–F-08 contracts and STS.
+1. Q-03 and selected Q-04 policies approved in PR #73; the NFR-05 local measurement contract is selected on 28 November 2026 for normal PR review.
+2. F-05–F-08 baseline contracts/STS reviewed in PR #73; review subsequent clarifications before implementation.
 3. Agree implementation ownership when each feature is ready; ownership is not part of this baseline.
 4. Create one Issue and feature branch per feature when implementation begins.
-5. Implement domain/API/database tests before completing UI work.
+5. Follow the reviewed contract: write meaningful new tests and demonstrate their expected failures against the previous behavior before implementing the feature, then implement and obtain GREEN plus regression. Preserve actual RED/GREEN commands, tested commits (and any test-only/uncommitted diff needed to identify the tested tree), relevant setup/assertions and execution output including failed/skipped counts. These are future obligations; no Sprint 2 RED/GREEN execution is claimed here.
 6. Add UI validation, status feedback and committed-state refresh.
 7. Require linked PR, substantive teammate review and passing CI.
 8. Integrate into `sprint2-staging` only after F-01–F-04 regression.
 9. Promote the reviewed release to `main` after migration, smoke, persistence and release-readiness checks.
 
-Sprint 2 completion requires executed acceptance evidence, unit/API/UI/PostgreSQL regression, typecheck, build, CI, review and release traceability. Lab 7 request cancellation is a separate change: Issue #71 received TA approval and contract PR #74 was reviewed and merged into `lab7-staging` at baseline commit `ac00bae`. Its implementation is separate from Sprint 2 and is not claimed completed here.
+Sprint 2 completion requires executed acceptance evidence, unit/API/UI/PostgreSQL regression, typecheck, build, CI, review and release traceability. Lab 7 request cancellation is a separate change: Issue #71 received TA approval and contract PR #74 was reviewed and merged into `lab7-staging` at baseline commit `ac00bae`. Implementation PR #76 and release PR #79 are merged; accepted main release `7daa6a9` is included in this baseline. Sprint 2 preserves owner-only PENDING → CANCELLED, CANCELLED checkout rejection and cancellation/checkout mutual exclusion; return does not reopen a terminal request. This does not establish completion of F-05–F-10.
