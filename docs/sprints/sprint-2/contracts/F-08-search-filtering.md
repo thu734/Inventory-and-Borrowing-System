@@ -4,8 +4,8 @@
 - STS version: 0.2
 - Revision date: 2026-11-24
 - Author: Thu Thu Wai - 3486
-- Reviewer: pending teammate review
-Approval status: draft; selected Q-04 query proposal pending formal teammate confirmation; not implemented or verified
+- Reviewer: MoeD3482; approved baseline `b54f722` in [PR #73](https://github.com/thu734/Inventory-and-Borrowing-System/pull/73), 26 November 2026 (Asia/Bangkok)
+Approval status: baseline contract/STS approved in PR #73; not implemented; tests not executed. Current clarifications are the selected implementation baseline, subject to normal PR review.
 
 ## Traceability and layer impact
 
@@ -23,7 +23,7 @@ Requirements: FR-10; BR-02, BR-06; NFR-01, NFR-06, NFR-08, NFR-09. Dependencies:
 
 The existing authenticated `GET /api/v1/assets/:id` detail route remains unchanged and continues rejecting query parameters. Borrowers and Custodians retain the same catalog permission; anonymous is 401. Results use the existing Asset DTO and server-derived availability.
 
-UI clear/reset returns to no-query results. Valid no-match queries return 200 with an empty collection and explicit empty message. After committed checkout, return or inventory mutation, the catalog refetches. Uncertain mutations do not claim success or auto-repeat. Controls are labeled, keyboard-operable, visibly focused and responsive.
+UI clear/reset returns to no-query results. Valid no-match queries return 200 with an empty collection and explicit empty message. After committed checkout, return or inventory mutation, an already-mounted catalog refetches and updates its visible availability/results without manual refresh or remount. This is planned behavior: the existing stale-catalog defect remains unresolved in the accepted Lab 7 implementation. Uncertain mutations do not claim success or auto-repeat. Controls are labeled, keyboard-operable, visibly focused and responsive.
 
 ## Acceptance criteria and STS
 
@@ -48,7 +48,7 @@ UI clear/reset returns to no-query results. Valid no-match queries return 200 wi
 | TEST-F08-05 | API | Unknown key, `available=yes`, 121-char q | 400 safe error; no write. |
 | TEST-F08-06 | Integration/PostgreSQL | Checkout/return/serviceability then same query | Current committed availability is returned. |
 | TEST-F08-07 | API | No-query list, detail with query, distinct asset-code fixtures | No-query compatibility, detail rejection, assetCode ASC then id ASC order. |
-| TEST-F08-08 | UI | Loading/no-match/reset/outage/narrow keyboard view | Accessible recovery and refresh. |
+| TEST-F08-08 | UI/integration | Already-mounted catalog plus checkout, return or inventory mutation; loading/no-match/reset/outage/narrow keyboard view | Successful mutation automatically updates visible availability/results without manual refresh or remount; accessible recovery on failure. A fresh API read alone does not verify this UI behavior. |
 | TEST-F08-09 | Regression | F-01–F-07 suites | Existing behavior passes. |
 
 ## Definition of Done
