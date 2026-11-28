@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { request } from '../../lib/api-client';
 import { openBorrowRequest } from '../borrowing/BorrowerWorkspace';
 import './catalog.css';
@@ -19,8 +19,9 @@ interface AssetListResponse {
   items: Asset[];
 }
 
-export function EquipmentCatalog({ canBorrow }: { canBorrow: boolean }) {
+export function EquipmentCatalog({ canBorrow, refreshVersion = 0 }: { canBorrow: boolean; refreshVersion?: number }) {
   const [assets, setAssets] = useState<Asset[]>([]);
+  const catalogSnapshot = useRef({ version: 0, items: [] as Asset[] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refresh, setRefresh] = useState(0);
@@ -38,7 +39,9 @@ export function EquipmentCatalog({ canBorrow }: { canBorrow: boolean }) {
     request<AssetListResponse>('/assets')
       .then(data => {
         if (!cancelled) {
+          catalogSnapshot.current = { version: catalogSnapshot.current.version + 1, items: data.items };
           setAssets(data.items);
+          setSelected(current => data.items.find(item => item.id === current?.id) ?? current);
         }
       })
       .catch((err: unknown) => {
@@ -57,7 +60,7 @@ export function EquipmentCatalog({ canBorrow }: { canBorrow: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [refresh]);
+  }, [refresh, refreshVersion]);
 
   async function viewDetails(assetId: string) {
     if (detailLoading) return;
@@ -72,12 +75,16 @@ export function EquipmentCatalog({ canBorrow }: { canBorrow: boolean }) {
     setDetailError('');
     setDetailLoading(true);
 
+    const snapshotVersion = catalogSnapshot.current.version;
     try {
       const asset = await request<Asset>(
         `/assets/${encodeURIComponent(assetId)}`
       );
 
-      setSelected(asset);
+      // A detail read started before a committed-return refresh must not restore stale availability.
+      const latest = catalogSnapshot.current;
+      setSelected(latest.version !== snapshotVersion
+        ? latest.items.find(item => item.id === asset.id) ?? asset : asset);
     } catch (err) {
       setDetailError(
         err instanceof Error

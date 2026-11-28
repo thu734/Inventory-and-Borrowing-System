@@ -96,6 +96,7 @@ describe('F-04 Custodian API security and behavior', () => {
     });
 
     custodianStore = {
+      returnLoan: vi.fn(async () => { throw new Error('Return is not used by F-04 fixtures'); }),
       requests: vi.fn(async status => {
         const items = [pendingRequest, fulfilledRequest];
 

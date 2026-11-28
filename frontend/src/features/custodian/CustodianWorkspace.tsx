@@ -55,7 +55,7 @@ function messageFromError(error: unknown): string {
     : 'Unable to complete this operation.';
 }
 
-export function CustodianWorkspace() {
+export function CustodianWorkspace({ onReturned }: { onReturned?: () => void } = {}) {
   const { session, retry } = useAuth();
 
   const [filter, setFilter] = useState<Filter>('PENDING');
@@ -74,6 +74,20 @@ export function CustodianWorkspace() {
   const [refreshVersion, setRefreshVersion] = useState(0);
 
   const checkoutInFlight = useRef(false);
+  const returnInFlight = useRef(false);
+  const [confirmReturnId, setConfirmReturnId] = useState<string | null>(null);
+  const [returnId, setReturnId] = useState<string | null>(null);
+  const [uncertainReturnId, setUncertainReturnId] = useState<string | null>(null);
+  const [returnError, setReturnError] = useState('');
+  const [returnSuccess, setReturnSuccess] = useState<CustodianLoan | null>(null);
+  const confirmReturnButton = useRef<HTMLButtonElement>(null);
+  const returnAlert = useRef<HTMLDivElement>(null);
+  const loansHeading = useRef<HTMLHeadingElement>(null);
+  const restoreReturnFocus = useRef<string | null>(null);
+
+  useEffect(() => { if (confirmReturnId) confirmReturnButton.current?.focus(); }, [confirmReturnId]);
+  useEffect(() => { if (returnError) returnAlert.current?.focus(); }, [returnError]);
+  useEffect(() => { if (returnSuccess) loansHeading.current?.focus(); }, [returnSuccess]);
 
   useEffect(() => {
     let active = true;
@@ -115,17 +129,20 @@ export function CustodianWorkspace() {
   }, [filter, refreshVersion]);
 
   function refresh() {
-    if (checkoutInFlight.current) return;
+    if (checkoutInFlight.current || returnInFlight.current) return;
 
     setConfirmId(null);
     setUncertainId(null);
     setActionError('');
+    setConfirmReturnId(null);
+    setUncertainReturnId(null);
+    setReturnError('');
     setRefreshVersion(version => version + 1);
   }
 
   async function checkout(requestId: string) {
     if (
-      checkoutInFlight.current ||
+      checkoutInFlight.current || returnInFlight.current ||
       uncertainId === requestId
     ) {
       return;
@@ -175,7 +192,36 @@ export function CustodianWorkspace() {
     }
   }
 
-  const busy = checkoutId !== null;
+  async function returnLoan(loanId: string) {
+    if (checkoutInFlight.current || returnInFlight.current || uncertainReturnId === loanId) return;
+    returnInFlight.current = true;
+    setReturnId(loanId);
+    setReturnError('');
+    setReturnSuccess(null);
+    setSuccess(null);
+    try {
+      const result = await request<CustodianLoan>(
+        `/custodian/loans/${encodeURIComponent(loanId)}/return`,
+        { body: {}, csrf: session?.csrfToken }
+      );
+      setConfirmReturnId(null);
+      setReturnSuccess(result);
+      setRefreshVersion(version => version + 1);
+      onReturned?.();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) retry();
+      const uncertain = !(error instanceof ApiError) || error.status === 0 || error.status >= 500;
+      if (uncertain) setUncertainReturnId(loanId);
+      setConfirmReturnId(null);
+      setReturnError(messageFromError(error) + (uncertain
+        ? ' The return result is uncertain. Refresh records and review the Loan before trying again.' : ''));
+    } finally {
+      returnInFlight.current = false;
+      setReturnId(null);
+    }
+  }
+
+  const busy = checkoutId !== null || returnId !== null;
 
   return (
     <section
@@ -214,6 +260,19 @@ export function CustodianWorkspace() {
           <p className="custodian-record-id">
             Active Loan: {success.loan.id}
           </p>
+        </div>
+      )}
+
+      {returnSuccess && (
+        <div className="custodian-success" role="status">
+          <strong>Return successful</strong>
+          <p>{returnSuccess.asset.assetCode} was returned by {returnSuccess.borrower.displayName}.</p>
+        </div>
+      )}
+      {returnError && (
+        <div className="custodian-error" role="alert" ref={returnAlert} tabIndex={-1}>
+          <strong>Return could not be confirmed</strong>
+          <p>{returnError}</p>
         </div>
       )}
 
@@ -452,7 +511,7 @@ export function CustodianWorkspace() {
       >
         <div className="custodian-section-header">
           <div>
-            <h3 id="loans-heading">Active Loans</h3>
+            <h3 id="loans-heading" ref={loansHeading} tabIndex={-1}>Active Loans</h3>
             <p>
               Equipment currently checked out to Borrowers.
             </p>
@@ -486,9 +545,34 @@ export function CustodianWorkspace() {
                   </p>
                 </div>
 
-                <span className="custodian-status active">
-                  Active
-                </span>
+                <div className="custodian-actions" aria-busy={returnId === loan.id}>
+                  <span className="custodian-status active">Active</span>
+                  {confirmReturnId === loan.id ? (
+                    <>
+                      <p>Confirm return of {loan.asset.assetCode} ({loan.asset.modelName}) from {loan.borrower.displayName}, checked out {displayDate(loan.checkedOutAt)}?</p>
+                      <button type="button" className="custodian-primary" ref={confirmReturnButton}
+                        disabled={busy} onClick={() => void returnLoan(loan.id)}>
+                        {returnId === loan.id ? 'Returning...' : 'Confirm return'}
+                      </button>
+                      <button type="button" className="custodian-button" disabled={busy} onClick={() => {
+                        restoreReturnFocus.current = loan.id;
+                        setConfirmReturnId(null);
+                      }}>Cancel</button>
+                    </>
+                  ) : (
+                    <button type="button" className="custodian-primary"
+                      ref={node => {
+                        if (node && restoreReturnFocus.current === loan.id) {
+                          node.focus(); restoreReturnFocus.current = null;
+                        }
+                      }}
+                      disabled={busy || loading || uncertainReturnId === loan.id}
+                      onClick={() => { setConfirmId(null); setActionError(''); setReturnError(''); setConfirmReturnId(loan.id); }}>
+                      Return
+                    </button>
+                  )}
+                  {uncertainReturnId === loan.id && <p>Refresh records to confirm the Loan state before another return attempt.</p>}
+                </div>
               </li>
             ))}
           </ul>

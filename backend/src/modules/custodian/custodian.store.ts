@@ -36,7 +36,14 @@ export interface CustodianLoanDTO {
   checkedOutAt: string;
 }
 
+export interface ReturnedLoanDTO extends CustodianLoanDTO {
+  returnedAt: string;
+  returnedBy: { id: string; displayName: string };
+}
+
 export interface CustodianStore {
+  returnLoan(loanId: string, custodianId: string): Promise<ReturnedLoanDTO>;
+
   requests(
     status?: 'PENDING' | 'FULFILLED' | 'CANCELLED'
   ): Promise<CustodianRequestDTO[]>;
@@ -199,6 +206,42 @@ export class PrismaCustodianStore implements CustodianStore {
     });
 
     return rows.map(loanDTO);
+  }
+
+  async returnLoan(loanId: string, custodianId: string): Promise<ReturnedLoanDTO> {
+    return this.db.$transaction(async tx => {
+      const initial = await tx.loan.findUnique({ where: { id: loanId }, select: { assetId: true } });
+      if (!initial) throw new ApiError(404, 'NOT_FOUND', 'Resource not found.');
+
+      // Same lock order as request creation, checkout and cancellation: Asset first.
+      await tx.$queryRaw`SELECT "id" FROM "Asset" WHERE "id" = ${initial.assetId} FOR UPDATE`;
+      const rows = await tx.$queryRaw<{
+        id: string; assetId: string; checkedOutAt: Date; returnedAt: Date | null;
+      }[]>`SELECT "id", "assetId", "checkedOutAt", "returnedAt" FROM "Loan" WHERE "id" = ${loanId} FOR UPDATE`;
+      const current = rows[0];
+      if (!current) throw new ApiError(404, 'NOT_FOUND', 'Resource not found.');
+      if (current.assetId !== initial.assetId) {
+        throw new ApiError(409, 'INVALID_LOAN_STATE', 'Loan state changed. Refresh and try again.');
+      }
+      if (current.returnedAt !== null) {
+        throw new ApiError(409, 'LOAN_ALREADY_RETURNED', 'This Loan has already been returned.');
+      }
+      const returnedAt = new Date();
+      if (returnedAt < current.checkedOutAt) {
+        throw new ApiError(409, 'INVALID_LOAN_STATE', 'Return time cannot precede checkout.');
+      }
+      const changed = await tx.loan.updateMany({
+        where: { id: loanId, assetId: initial.assetId, returnedAt: null },
+        data: { returnedAt, returnedById: custodianId }
+      });
+      if (changed.count !== 1) {
+        throw new ApiError(409, 'LOAN_ALREADY_RETURNED', 'This Loan has already been returned.');
+      }
+      const saved = await tx.loan.findUniqueOrThrow({ where: { id: loanId }, select: {
+        ...loanSelect, returnedAt: true, returnedBy: { select: borrowerSelect }
+      } });
+      return { ...loanDTO(saved), returnedAt: saved.returnedAt!.toISOString(), returnedBy: saved.returnedBy! };
+    }, { maxWait: 5000, timeout: 10000 });
   }
 
   async checkout(requestId: string, custodianId: string) {
