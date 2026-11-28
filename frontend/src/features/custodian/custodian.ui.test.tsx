@@ -123,6 +123,16 @@ beforeEach(() => {
 });
 
 describe('F-04 Custodian Workspace', () => {
+  it('shows cancelled history with its own status style and no checkout action', async () => {
+    mocks.request.mockImplementation(async (path: string) => ({ items: path === base ? [{ ...pending, status: 'CANCELLED', cancelledAt: '2026-11-25T10:00:00Z' }] : [] }));
+    render(<CustodianWorkspace />);
+    await screen.findByText('No pending requests.');
+    fireEvent.click(screen.getByRole('button', { name: 'All requests' }));
+    expect(await screen.findByText('CANCELLED')).toHaveClass('cancelled');
+    expect(screen.getByText('CANCELLED')).not.toHaveClass('fulfilled');
+    expect(screen.queryByRole('button', { name: /Checkout/ })).not.toBeInTheDocument();
+  });
+
   it('UI-F04-01 displays pending requests', async () => {
     render(<CustodianWorkspace />);
 

@@ -21,6 +21,7 @@ enum Serviceability {
 enum BorrowRequestStatus {
   PENDING
   FULFILLED
+  CANCELLED
 }
 
 model User {
@@ -86,6 +87,7 @@ model BorrowRequest {
   status      BorrowRequestStatus @default(PENDING)
   createdAt   DateTime            @default(now())
   fulfilledAt DateTime?
+  cancelledAt DateTime?
   borrower    User                @relation("BorrowerRequests", fields: [borrowerId], references: [id], onDelete: Restrict)
   asset       Asset               @relation(fields: [assetId], references: [id], onDelete: Restrict)
   loan        Loan?

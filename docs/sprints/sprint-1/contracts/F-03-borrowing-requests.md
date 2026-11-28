@@ -25,7 +25,7 @@ Member 6 owns request creation and Borrower-only request/active-loan retrieval. 
 
 Dependencies: F-01 session/role/Origin/CSRF guards; SYS-01 User, Asset, EquipmentModel, BorrowRequest and Loan; Member 2's F-02 selected-Asset interface and F-04 checkout-created records. Database fixtures can verify retrieval independently, but do not establish the end-to-end checkout journey.
 
-Included: authenticated Borrower creates a PENDING request for an eligible physical Asset; lists/retrieves only own requests and active Loans; UI loading, empty, validation, failure and successful saved states; and the minimal F-03 partial-unique-index migration. Excluded: catalog list/search, Custodian queue/checkout, request editing/cancellation/expiry, approval states, Loan creation, returns, due dates, overdue/history, authentication replacement, and seed changes.
+Included: authenticated Borrower creates an eligible PENDING request, cancels an own PENDING request, and lists/retrieves only own requests and active Loans. Excluded: catalog list/search, Custodian queue/checkout implementation, request editing/expiry, approval states, Loan creation, returns, due dates, overdue/history, authentication replacement, and seed changes. Lab 7 cancellation is an additive lifecycle transition, not request editing or deletion.
 
 ## 2. Decisions and integration policy
 
@@ -56,7 +56,7 @@ POST order: authentication → Borrower role → exact Origin → CSRF → JSON 
 
 ### Data behavior
 
-- Reuse existing models and generated Prisma client. BorrowRequest writes only assetId, authenticated borrowerId, PENDING, createdAt and fulfilledAt=null; id is server-generated. No Asset availability field or quantity counter is introduced.
+- Reuse existing models and generated Prisma client. BorrowRequest writes server-derived borrowerId/assetId, status, createdAt, fulfilledAt and nullable cancelledAt; id and cancellation time are server-generated. `PENDING → CANCELLED` is the only cancellation transition; only a successful transition sets cancelledAt. No Asset availability field or quantity counter is introduced.
 - Eligibility: serviceability=SERVICEABLE AND no Loan with returnedAt=null. PENDING requests do not affect eligibility; another Borrower's request is not a rejection reason.
 - One transaction: lock selected existing Asset with a parameterized query, recheck eligibility and approved duplicate rule, create request, commit. Lock SQL must use bound parameters, not string interpolation. Rollback on injected/persistence failure; no partial request.
 - All request reads use borrowerId=session.user.id in the database predicate. All Loan reads additionally require returnedAt=null. Filter before list/count/projection, never fetch a foreign record then redact it in the UI.
@@ -74,7 +74,7 @@ Prefix /api/v1. Every endpoint below is BORROWER-only, including reads; Custodia
 | GET /me/loans | No query fields; active only | 200 {data:{items:ActiveLoanDTO[]}} |
 | GET /me/loans/:id | Active Loan ID | 200 {data:ActiveLoanDTO} |
 
-RequestDTO = {id,status,createdAt,asset:{id,assetCode,modelName,category}}. ActiveLoanDTO = {id,borrowRequestId,checkedOutAt,asset:{id,assetCode,modelName,category}}. Times are UTC ISO strings. Requests include the caller's PENDING/FULFILLED records; Loans exclude returned records. No due date or completed history. Deterministic descending createdAt/checkedOutAt, then descending id for ties. Empty lists return items:[], not 404. No pagination or total counts in this bounded synthetic-data increment; revisit separately if scale requires it.
+RequestDTO = {id,status,createdAt,cancelledAt,asset:{id,assetCode,modelName,category}}. ActiveLoanDTO = {id,borrowRequestId,checkedOutAt,asset:{id,assetCode,modelName,category}}. Times are UTC ISO strings; cancelledAt is null unless the server successfully performs cancellation. Requests include the caller's PENDING/FULFILLED/CANCELLED records; Loans exclude returned records. No due date or completed history. Deterministic descending createdAt/checkedOutAt, then descending id for ties. Empty lists return items:[], not 404. No pagination or total counts in this bounded synthetic-data increment; revisit separately if scale requires it.
 
 Implemented IDs: nonblank UUID strings matching server-generated SYS-01 IDs, no client-selected owner. Reject unknown body/query fields (including borrowerId, role, status, timestamps, quantity), arrays/null, malformed JSON, and invalid identifiers before DB work. No free-text notes or duration fields.
 
@@ -89,6 +89,7 @@ Implemented IDs: nonblank UUID strings matching server-generated SYS-01 IDs, no 
 | Missing or foreign request; missing/foreign/returned Loan detail | Same safe 404 NOT_FOUND, no ownership disclosure |
 | Same-owner pending duplicate | 409 DUPLICATE_PENDING_REQUEST under approved Q-01; no extra pending row |
 | Database exception | Existing safe 500 INTERNAL_ERROR; no SQL/stack/secret, no false success |
+| Cancellation | `POST /me/borrow-requests/:id/cancel`, authenticated Borrower owner only, valid Origin/CSRF, empty strict JSON body | 200 with CANCELLED RequestDTO and server cancelledAt; 400 malformed ID/body, 401 unauthenticated, 403 wrong role, 404 foreign/missing owner-scoped request, 409 REQUEST_NOT_PENDING for FULFILLED/CANCELLED or checkout race; no partial write |
 
 ## 5. UI and F-02 handoff
 
@@ -150,7 +151,7 @@ Loan fixtures use existing constraints, including matching borrower/asset/reques
 
 ### Initial red phase
 
-The executable file `backend/tests/f03.contract.red.test.ts` preserves the three original baseline expectations (anonymous creation rejected before domain lookup, authenticated own request list and own active-Loan list). Its recorded red run is historical evidence from before the F-03 routes existed; after implementation the same assertions pass. The suite uses the test-only auth store and does not establish PostgreSQL persistence or all acceptance criteria.
+The executable file `backend/tests/f03.contract.red.test.ts` preserves the three original baseline expectations (anonymous creation rejected before domain lookup, authenticated own request list and own active-Loan list). Its recorded Sprint 1 red run is historical evidence from before the F-03 routes existed; after implementation the same assertions pass. The suite uses the test-only auth store and does not establish PostgreSQL persistence or all acceptance criteria.
 
 ## 8. Historical implementation order and November 7 verification
 
@@ -178,3 +179,31 @@ Verification evidence (7 November 2026):
 - `npm run build`: PASS for backend and frontend.
 - `git diff --check`: PASS.
 - Browser: PARTIAL manual rendering only. Existing shared pages showed the authenticated Borrower request panel, own-record navigation and Custodian control exclusion. Full submission, disposable-database persistence, refresh, duplicate conflict, cross-Borrower isolation, keyboard-only and viewport checks were NOT VERIFIED because the running app's database could not be confirmed as the disposable audit database.
+
+## Lab 7 contract revision — Issue #71 (revision 1.2, 25 November 2026)
+
+TA approval: **P’ Tik**, **November 25, 2026**; the original email is not attached or independently inspected here. Current status: **contract approved in [PR #74](https://github.com/thu734/Inventory-and-Borrowing-System/pull/74); implementation approved and merged in [PR #76](https://github.com/thu734/Inventory-and-Borrowing-System/pull/76)**. [Lab 7 verification](../../../labs/lab-07/implementation-plan.md#d-current-verification-evidence--26-november-2026) records passing automated regression at staging `1c8029e`; release PR #79 and deployment remain pending. Approved transition: owner-only `PENDING → CANCELLED`, only while pending. Fulfilled/cancelled requests return `409 REQUEST_NOT_PENDING`, remain persisted and owner-visible, and do not delete history, create a Loan or alter Asset availability. `POST /api/v1/me/borrow-requests/:id/cancel` uses existing authentication, Borrower role, Origin and CSRF guards and an empty strict JSON body. UI requires confirmation, loading, server-authoritative status, explicit cancelledAt display/status and recoverable errors. Cancellation serializes with checkout using the existing Asset-first lock order and request recheck.
+
+| AC | Expected behavior | STS |
+|---|---|---|
+| AC-F03-10 | Owner cancels own PENDING request; server sets cancelledAt once and returns CANCELLED. | TEST-F03-10 |
+| AC-F03-11 | Anonymous, Custodian and another Borrower cannot cancel. | TEST-F03-11 |
+| AC-F03-12 | Fulfilled/already-cancelled/missing/malformed requests are rejected unchanged. | TEST-F03-12 |
+| AC-F03-13 | History persists; cancelledAt persists; no Loan/delete/Asset availability change. | TEST-F03-13 |
+| AC-F03-14 | UI confirmation/loading/status/error states are correct. | TEST-F03-14 |
+| AC-F03-15 | CANCELLED remains visible after refresh/fresh app. | TEST-F03-15 |
+| AC-F03-16 | Concurrent cancel/checkout has exactly one winner and no partial loser state. | TEST-F03-16; TEST-F04-13 |
+
+| Test ID / AC | Level | Preconditions | Input/action | Expected result and database assertions |
+|---|---|---|---|---|
+| TEST-F03-10 / AC-F03-10 | API/PostgreSQL | Active owner A; own PENDING R; valid Origin/CSRF | POST cancel with empty JSON | 200; R becomes CANCELLED; cancelledAt is one server timestamp and persists; no Loan/Asset change. |
+| TEST-F03-11 / AC-F03-11 | API security | Anonymous, Custodian, Borrower B and owner A sessions | Attempt cancellation of A's R | 401/403/safe 404 as applicable; R unchanged; zero writes. |
+| TEST-F03-12 / AC-F03-12 | API/PostgreSQL | FULFILLED R with Loan, CANCELLED R, missing/malformed IDs/body | Repeat/invalid cancellation | 400/404/409; no status/timestamp/Loan/Asset change. |
+| TEST-F03-13 / AC-F03-13 | PostgreSQL | PENDING R and serviceable Asset; capture row/Loan/Asset | Cancel, reload owner request and inspect DB | Row remains with same id/owner/asset/createdAt, CANCELLED and cancelledAt; no Loan/delete/availability change. |
+| TEST-F03-14 / AC-F03-14 | UI/E2E | Owner UI with PENDING row and success/conflict/failure responses | Select Cancel, confirm, observe pending and refresh | Action is owner/status-gated; confirmation and disabled pending state appear; server status/cancelledAt is shown; failures are recoverable and not false success. |
+| TEST-F03-15 / AC-F03-15 | API/PostgreSQL | Cancelled R; fresh app/Prisma instance | Reauthenticate and retrieve list/detail | CANCELLED and cancelledAt remain persisted and owner-visible. |
+| TEST-F03-16 / AC-F03-16 | Barrier-controlled PostgreSQL | Same PENDING R; valid owner cancellation and Custodian checkout | Execute both transactions concurrently | Exactly one wins: CANCELLED with cancelledAt/no Loan, or FULFILLED with fulfilledAt/one active Loan. Loser returns 409 and cannot alter winner state. |
+
+| TEST-REG-01 | API/PostgreSQL/UI regression | Existing F-01 authentication/RBAC, F-02 catalog/availability, F-03 request/own-record and F-04 queue/checkout suites and fixtures | Run the existing Sprint 1 regression suite after implementation | F-01–F-04 behavior remains unchanged except the approved cancellation transition; ownership, duplicate prevention, checkout uniqueness, persistence and existing error conventions continue to pass. |
+
+Historical Part A revision metadata (status at drafting, before PR #74 approval and PR #76 implementation): no preceding F-03 version label is recorded in the existing document; this is the first explicitly versioned Lab 7 revision, **1.2**, dated **November 25, 2026**. Reason: **Approved Lab 7 request-lifecycle change, Issue #71**; TA approval: **P’ Tik**; reviewer **Pending**; implementation **Not started**; review status **Pending teammate review**.

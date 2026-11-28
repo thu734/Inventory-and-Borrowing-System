@@ -8,6 +8,7 @@ on:
       - main
       - sprint1-staging
       - lab6-staging
+      - lab7-staging
   workflow_call:
 
 permissions:

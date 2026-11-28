@@ -109,7 +109,7 @@ The implemented Prisma schema contains the following entities:
 | `Session` | Opaque token hash, user reference, creation/expiry/revocation timestamps; supports server-side authentication and logout |
 | `EquipmentModel` | Unique `(name, category)` equipment type with optional description; has many Assets |
 | `Asset` | Physical unit identity, unique `assetCode`, model reference and `serviceability` (`SERVICEABLE`, `MAINTENANCE`, `RETIRED`) |
-| `BorrowRequest` | Borrower and Asset references, `status` (`PENDING` or `FULFILLED`), creation time and optional fulfillment time |
+| `BorrowRequest` | Borrower and Asset references, `status` (`PENDING`, `FULFILLED` or `CANCELLED`), creation time, optional fulfillment time and nullable server-generated cancellation time |
 | `Loan` | Checkout record linking a BorrowRequest, Asset, Borrower and checking-out Custodian, with checkout and optional return information |
 
 ```mermaid
@@ -125,7 +125,7 @@ erDiagram
     User ||--o{ Loan : receives_return
 ```
 
-`Loan` uses a composite foreign key to `(BorrowRequest.id, BorrowRequest.borrowerId, BorrowRequest.assetId)`, so the Loan's borrower and Asset must match its request. It also has separate foreign keys to the Asset, Borrower, checkout Custodian and optional return Custodian.
+`Loan` uses a composite foreign key to `(BorrowRequest.id, BorrowRequest.borrowerId, BorrowRequest.assetId)`, so the Loan's borrower and Asset must match its request. It also has separate foreign keys to the Asset, Borrower, checkout Custodian and optional return Custodian. A CANCELLED request has no Loan; a FULFILLED request retains its existing Loan relationship.
 
 ### 4.2 Integrity and availability rules
 
@@ -134,12 +134,16 @@ erDiagram
 - A Loan belongs to one BorrowRequest and must preserve the request's Borrower/Asset pair.
 - `Loan_one_active_per_asset` is a PostgreSQL partial unique index on `Loan.assetId` where `returnedAt IS NULL`; it enforces at most one active Loan per Asset.
 - `BorrowRequest_one_pending_per_borrower_asset` is the F-03 partial unique index on `(borrowerId, assetId)` where `status = 'PENDING'`. It permits a later request after fulfillment while rejecting same-Borrower pending duplicates.
-- A BorrowRequest in `PENDING` state has no fulfillment time; a `FULFILLED` request has one, enforced by a check constraint.
+- A BorrowRequest in `PENDING` or `CANCELLED` state has no fulfillment time; a `FULFILLED` request has one. Only CANCELLED has a non-null `cancelledAt`; PENDING and FULFILLED have null `cancelledAt`. These mutually exclusive timestamp rules are enforced by the revised check constraint.
+- Legal request transitions are `PENDING → FULFILLED` through Custodian checkout and `PENDING → CANCELLED` through owner cancellation. `FULFILLED` and `CANCELLED` are terminal; no reverse, repeated or cross-transition is legal.
 - An Asset is borrowing-available only when `serviceability = SERVICEABLE` and no active Loan exists.
 - PENDING requests do not reserve Assets and do not change Asset or Loan state.
+- CANCELLED requests remain persisted and owner-visible, do not reserve or alter Asset availability/serviceability, and cannot create a Loan.
 - `RESTRICT` foreign keys preserve referenced equipment, requests and users needed for history.
 
-The base SYS-01 migration creates the schema, foreign keys, ordinary indexes, checks and `Loan_one_active_per_asset`. The dedicated F-03 migration adds the pending-request partial unique index without changing the historical SYS-01 migration.
+The base SYS-01 migration creates the schema, foreign keys, ordinary indexes, checks and `Loan_one_active_per_asset`. Lab 7 requires a forward migration that adds the `CANCELLED` enum value, nullable `cancelledAt`, revised timestamp check and any required generated Prisma client changes. Existing PENDING/FULFILLED rows require no backfill; their `cancelledAt` is NULL. The pending-request partial unique index remains scoped to `status = 'PENDING'`, so cancellation releases the owner/Asset pair for a later request. Migration failure must leave the database unchanged; application transaction failure must roll back status/timestamp together.
+
+Cancellation and checkout use the same transaction protocol: read the request to identify its Asset, lock the Asset first, lock and re-read the request, verify its current PENDING state and relationship, then perform one conditional transition and commit. The winner is the only successful transition; the loser receives the documented conflict and cannot create or alter a Loan, request status or timestamp. This prevents lock-order inversion and stale-state decisions.
 
 ### 4.3 Local database lifecycle
 
@@ -155,6 +159,10 @@ npm run db:seed
 ```
 
 `DATABASE_URL` points to the local database. The seed requires synthetic `SEED_BORROWER_PASSWORD` and `SEED_CUSTODIAN_PASSWORD` values and creates `borrower@example.test`, `custodian@example.test` and synthetic equipment fixtures. Database tests use separately named disposable databases and never reset a running application database.
+
+## Lab 7 contract delta — Issue #71
+
+The revised F-03/F-04 contracts add persisted `CANCELLED` request state, owner-only cancellation, cancelled-checkout rejection, and mutually exclusive atomic cancellation/checkout. Part A originally made no schema change; the forward migration and application changes are now implemented and merged in PR #76 at staging `1c8029e`. [Current Lab 7 verification](labs/lab-07/implementation-plan.md#d-current-verification-evidence--26-november-2026) records passing fresh-database migration, fresh-instance persistence and both forced cancellation/checkout race outcomes. Populated-database upgrade preservation is not established by that CI run. Release PR #79 and production deployment remain pending. F-01/F-02 and Sprint 2 modules are unaffected.
 
 ## 5. UI architecture
 
@@ -265,11 +273,11 @@ The backend requires:
 
 The root environment also supplies synthetic seed passwords. Environment files are ignored and must never contain committed credentials. Prisma CLI commands and the backend use the configured database URL; migrations and seeding are explicit operations rather than application-startup side effects.
 
-Build and runtime are separate: TypeScript is checked and the backend build emits compiled artifacts through `tsconfig.build.json`; the current development script runs `src/server.ts` with Node's watch mode. The frontend build runs TypeScript checking and emits a Vite static artifact. A production process/container start command remains deployment work.
+Build and runtime are separate: TypeScript is checked and the backend build emits compiled artifacts through `tsconfig.build.json`; the current development script runs `src/server.ts` with Node's watch mode. The frontend build runs TypeScript checking and emits a Vite static artifact. At the historical Sprint 1 baseline, a production process/container start command remained deployment work; the current `Dockerfile` supplies the application start command.
 
-### 8.2 Planned packaging and cloud deployment
+### 8.2 Historical Sprint 1 packaging and cloud deployment plan
 
-Container packaging and GCP deployment are planned delivery work, not implemented in the current repository. The intended deployment separation is:
+The following is the historical Sprint 1 delivery plan. Packaging and release automation now exist in `Dockerfile`, `.github/workflows/deploy.yml` and `deploy/release.sh`; see the [deployment guide](labs/lab-05/deployment.md). The supplied GCP pre-release checks and remaining Lab 7 gates are recorded in the [Lab 7 plan](labs/lab-07/implementation-plan.md#e-pre-release-checks-and-remaining-gates). Lab 7 has not been deployed. At the original planning baseline, container packaging and GCP deployment were planned delivery work, not yet implemented. The intended deployment separation is:
 
 ```text
 Browser
@@ -302,6 +310,8 @@ No Docker image, GCP project, Cloud Run service, Cloud SQL instance or productio
 9. F-05 through F-10 depend on the shared schema and the state transitions established by F-03/F-04. Due-date, history and reporting behavior must not be inferred from Sprint 1 active-loan retrieval.
 
 ## 10. Verification status and review limits
+
+Current Lab 7 implementation/review and CI results are linked in Section 4. The following November 12 snapshot retains its historical limits; the newer cancellation/checkout barrier tests and focused UI accessibility tests do not establish full two-checkout synchronization, all-screen accessibility or production acceptance.
 
 F-01–F-04 are mounted in the integrated application. The [November 12 integrated verification](sprints/sprint-1/evidence/Sprint-1-integration-verification.md) records execution at `3710af0`: 159 unique passing tests in successful runs, typechecks/builds and real browser/PostgreSQL checkout, ownership, conflict and restart checks. Application/schema/test source is unchanged through documentation baseline `21ad3e3`; this editorial audit did not rerun those checks.
 
