@@ -88,6 +88,24 @@ afterAll(async () => {
 });
 
 describe('F-05 real PostgreSQL return contract', () => {
+  it('TEST-F05-01/14: actual Borrower request to checkout to return preserves the persisted lifecycle', async () => {
+    const asset = await db.asset.create({ data: { assetCode: `F05-JOURNEY-${randomUUID()}`, equipmentModelId: modelId } });
+    assetIds.push(asset.id);
+    const borrower = await login('borrower'); const custodian = await login();
+    const created = await borrower.agent.post('/api/v1/borrow-requests').set('Origin', origin)
+      .set('X-CSRF-Token', borrower.csrf).send({ assetId: asset.id });
+    expect(created.status).toBe(201);
+    const checked = await checkout(custodian, created.body.data.id);
+    expect(checked.status).toBe(201);
+    const loanId = checked.body.data.loan.id;
+    const returned = await ret(custodian, loanId);
+    expect(returned.status).toBe(200);
+    expect((await db.loan.findUniqueOrThrow({ where: { id: loanId } })).returnedById).toBe(users.custodian);
+    expect((await borrower.agent.get(`/api/v1/me/borrow-requests/${created.body.data.id}`)).body.data.status).toBe('FULFILLED');
+    expect((await borrower.agent.get('/api/v1/me/loans')).body.data.items.map((row: { id: string }) => row.id)).not.toContain(loanId);
+    expect((await borrower.agent.get(`/api/v1/assets/${asset.id}`)).body.data.available).toBe(true);
+  });
+
   it('CONTROL / TEST-F05-14: checkout persists one active Loan; database rejects a second active Loan', async () => {
     const f = await fixture();
     const second = await db.borrowRequest.create({ data: { assetId: f.asset.id, borrowerId: users.other,

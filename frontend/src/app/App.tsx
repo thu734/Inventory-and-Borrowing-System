@@ -11,6 +11,7 @@ export function App() {
 
   const [busy, setBusy] = useState(false);
   const [logoutError, setLogoutError] = useState('');
+  const [catalogVersion, setCatalogVersion] = useState(0);
 
   async function signOut() {
     setBusy(true);
@@ -106,6 +107,7 @@ export function App() {
 
             <EquipmentCatalog
               canBorrow={session.user.role === 'BORROWER'}
+              refreshVersion={catalogVersion}
             />
 
             {session.user.role === 'BORROWER' ? (
@@ -117,7 +119,7 @@ export function App() {
                 <BorrowerWorkspace />
               </>
             ) : (
-              <CustodianWorkspace />
+              <CustodianWorkspace onReturned={() => setCatalogVersion(version => version + 1)} />
             )}
           </section>
         )}

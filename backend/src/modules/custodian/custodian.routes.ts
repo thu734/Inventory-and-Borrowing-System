@@ -149,6 +149,22 @@ export function mountCustodianRoutes(
     }
   );
 
+  // POST /api/v1/custodian/loans/:loanId/return
+  auth.app.post(
+    `${base}/loans/:loanId/return`,
+    ...guards, auth.requireOrigin, auth.requireCsrf, noQuery, json,
+    express.json({ limit: '16kb', strict: true }),
+    async (req, res, next) => {
+      try {
+        const parsedId = id.safeParse(req.params.loanId);
+        if (!parsedId.success || !emptyBody.safeParse(req.body).success) {
+          throw new ApiError(400, 'INVALID_INPUT', 'A valid Loan ID and an empty JSON object are required.');
+        }
+        res.json({ data: await store.returnLoan(parsedId.data, custodianId(res)) });
+      } catch (error) { next(error); }
+    }
+  );
+
   // POST /api/v1/custodian/borrow-requests/:id/checkout
   auth.app.post(
     `${base}/borrow-requests/:id/checkout`,

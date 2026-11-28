@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../../app/App';
 import { CustodianWorkspace } from './CustodianWorkspace';
 import { ApiError } from '../../lib/api-client';
+import userEvent from '@testing-library/user-event';
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), retry: vi.fn(), logout: vi.fn() }));
 vi.mock('../../lib/api-client', async original => ({
@@ -94,5 +95,55 @@ describe('F-05 return UI contract (component evidence only)', () => {
     render(<CustodianWorkspace />);
     expect(await screen.findByText('No active Loans.')).toBeVisible();
     expect(screen.queryByRole('button', { name: /^Return$/i })).not.toBeInTheDocument();
+  });
+});
+
+
+describe('F-05 focused keyboard and detail-refresh regression', () => {
+  it('TEST-F05-12: mounted catalog stays unavailable until return confirmation arrives', async () => {
+    let finish!: (value: typeof projection) => void;
+    mocks.request.mockImplementation((route: string) => route === path
+      ? new Promise(resolve => { finish = resolve; }) : respond(route));
+    render(<App />);
+    expect(await screen.findByText('Unavailable')).toBeVisible();
+    await confirmReturn();
+    expect(screen.getByText('Unavailable')).toBeVisible();
+    expect(screen.queryByText('Available')).not.toBeInTheDocument();
+    expect(mocks.request.mock.calls.filter(([route]) => route === '/assets')).toHaveLength(1);
+    returned = true; finish(projection);
+    expect(await screen.findByText('Available')).toBeVisible();
+    expect(await screen.findByText('No active Loans.')).toBeVisible();
+  });
+
+  it('TEST-F05-12/13: keyboard confirmation restores focus on cancel and moves focus safely after success', async () => {
+    const user = userEvent.setup();
+    render(<CustodianWorkspace />);
+    const trigger = await screen.findByRole('button', { name: /^Return$/i });
+    trigger.focus(); await user.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: /^Confirm return$/i })).toHaveFocus();
+    await user.keyboard('{Tab}');
+    expect(screen.getByRole('button', { name: /^Cancel$/i })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: /^Return$/i })).toHaveFocus();
+    await user.keyboard('{Enter}'); await user.keyboard('{Enter}');
+    expect(await screen.findByText('No active Loans.')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Active Loans' })).toHaveFocus();
+  });
+  it.each([false, true])('TEST-F05-12: preserves selected detail and refreshes it after return (late old detail=%s)', async late => {
+    let release!: (value: typeof asset) => void;
+    mocks.request.mockImplementation((route: string) => route === `/assets/${asset.id}`
+      ? late ? new Promise(resolve => { release = resolve; }) : Promise.resolve(asset)
+      : respond(route));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'View Details' }));
+    if (!late) expect(await screen.findByRole('region', { name: 'Equipment details' })).toHaveTextContent('Unavailable');
+    await confirmReturn();
+    expect(await screen.findByText('No active Loans.')).toBeVisible();
+    await waitFor(() => expect(mocks.request.mock.calls.filter(([route]) => route === '/assets').length).toBeGreaterThanOrEqual(2));
+    if (late) release(asset);
+    const detail = await screen.findByRole('region', { name: 'Equipment details' });
+    await waitFor(() => expect(within(detail).getByText('Available', { exact: false })).toBeVisible());
+    expect(detail).not.toHaveTextContent('Unavailable');
+    expect(screen.getByRole('button', { name: 'Hide Details' })).toBeEnabled();
   });
 });
